@@ -1,0 +1,34 @@
+[
+  {
+    "file": "food.jpg",
+    "commons": "Good_Food_Display_-_NCI_Visuals_Online.jpg"
+  },
+  {
+    "file": "portrait.jpg",
+    "commons": "Albert_Einstein_Head.jpg"
+  },
+  {
+    "file": "landscape.jpg",
+    "commons": "Matterhorn_from_Domhütte_-_2.jpg"
+  },
+  {
+    "file": "animal.jpg",
+    "commons": "Cat03.jpg"
+  },
+  {
+    "file": "building.jpg",
+    "commons": "Empire_State_Building_from_the_Top_of_the_Rock.jpg"
+  },
+  {
+    "file": "street.jpg",
+    "commons": "Tokyo Shibuya Scramble Crossing 2018-10-09.jpg"
+  },
+  {
+    "file": "screen.png",
+    "commons": "Screenshot of the user interface of eLabFTW.png"
+  },
+  {
+    "file": "crossing.mp4",
+    "note": "One-second H.264 clip of the Shibuya photograph, so sample mode can exercise the video frame path."
+  }
+]
