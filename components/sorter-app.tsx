@@ -5,18 +5,20 @@ import { FlightTile } from "@/components/flight-tile";
 import { FlockStage } from "@/components/flock-stage";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
+  classifyManyWithClip,
   classifyWithClip,
   isModelRuntimeError,
   loadClipModel,
   onModelProgress,
   stopClipWorker,
 } from "@/lib/clip-classifier";
-import { classifyBlobWithFallback } from "@/lib/fallback-classifier";
+import { classifyFramesWithFallback } from "@/lib/fallback-classifier";
 import {
-  FLOCK_FLIGHT_MS,
+  FLOCK_FLIGHT_MAX_MS,
   FLOCK_STAGGER_MS,
+  flightDuration,
   flockLook,
-  flockWaveSize,
+  flockReleaseCount,
 } from "@/lib/flock";
 import {
   filesFromDataTransfer,
@@ -52,8 +54,7 @@ type Flight = {
 };
 
 type LandingWait = {
-  expected: number;
-  got: number;
+  keys: Set<string>;
   resolve: () => void;
   timer: number;
 };
@@ -203,7 +204,7 @@ export function SorterApp() {
   const [zipping, setZipping] = useState(false);
   const runId = useRef(0);
   const urls = useRef<string[]>([]);
-  const landingsRef = useRef<LandingWait | null>(null);
+  const landingsRef = useRef<Set<LandingWait>>(new Set());
 
   useEffect(() => {
     return () => {
@@ -214,57 +215,55 @@ export function SorterApp() {
   }, []);
 
   function releaseLandings() {
-    const pending = landingsRef.current;
-    if (!pending) return;
-    pending.resolve();
+    for (const pending of landingsRef.current) pending.resolve();
+    landingsRef.current.clear();
   }
 
-  function noteLanding() {
-    const tracker = landingsRef.current;
-    if (!tracker) return;
-    tracker.got += 1;
-    if (tracker.got >= tracker.expected) tracker.resolve();
+  function noteLanding(key: string) {
+    for (const tracker of landingsRef.current) {
+      if (!tracker.keys.delete(key)) continue;
+      if (tracker.keys.size === 0) tracker.resolve();
+    }
   }
 
-  function waitForLandings(expected: number, run: number) {
+  function waitForLandings(keys: string[], run: number) {
     return new Promise<void>((resolve) => {
-      if (expected === 0 || runId.current !== run) {
+      if (keys.length === 0 || runId.current !== run) {
         resolve();
         return;
       }
       let settledWait = false;
       const tracker: LandingWait = {
-        expected,
-        got: 0,
+        keys: new Set(keys),
         resolve: () => {
           if (settledWait) return;
           settledWait = true;
-          if (landingsRef.current === tracker) landingsRef.current = null;
+          landingsRef.current.delete(tracker);
           window.clearTimeout(tracker.timer);
           resolve();
         },
         timer: 0,
       };
       tracker.timer = window.setTimeout(() => {
-        if (landingsRef.current !== tracker) return;
+        if (!landingsRef.current.has(tracker)) return;
         setState((current) => {
           if (runId.current !== run) return current;
           let categories = current.categories;
-          for (const flight of current.flights) {
-            if (flight.runId !== run) continue;
+          const stuck = current.flights.filter((flight) => tracker.keys.has(flight.key));
+          for (const flight of stuck) {
             categories = withLanded(categories, flight.categoryId, flight.categoryName, flight.item);
           }
           const added = countItems(categories) - countItems(current.categories);
           return {
             ...current,
             categories,
-            flights: [],
+            flights: current.flights.filter((flight) => !tracker.keys.has(flight.key)),
             landed: current.landed + added,
           };
         });
         tracker.resolve();
-      }, FLOCK_FLIGHT_MS + 280 + expected * FLOCK_STAGGER_MS + 600);
-      landingsRef.current = tracker;
+      }, FLOCK_FLIGHT_MAX_MS + 280 + keys.length * FLOCK_STAGGER_MS + 600);
+      landingsRef.current.add(tracker);
     });
   }
 
@@ -285,7 +284,7 @@ export function SorterApp() {
         landed: current.landed + added,
       };
     });
-    noteLanding();
+    noteLanding(flight.key);
   }
 
   function dropUrlsLater(previous: string[]) {
@@ -408,7 +407,7 @@ export function SorterApp() {
       );
     }
 
-    async function launchWave(wave: Held[]) {
+    async function launchWave(wave: Held[]): Promise<void> {
       if (runId.current !== id || wave.length === 0) return;
       setState((current) =>
         runId.current === id ? { ...current, categories: withShells(current.categories, wave) } : current,
@@ -461,20 +460,23 @@ export function SorterApp() {
           delay: index * FLOCK_STAGGER_MS,
           tilt: look.tilt,
           size: look.size,
-          lift: 76 + (index % 6) * 16,
-          weave: (index % 2 === 0 ? 1 : -1) * (14 + (index % 4) * 6),
-          duration: FLOCK_FLIGHT_MS + (index % 4) * 28,
+          lift: 96 + (index % 5) * 18,
+          weave: (index % 2 === 0 ? 1 : -1) * (26 + (index % 4) * 8),
+          duration: flightDuration(entry.item.id),
           categoryId: entry.hit.id,
           categoryName: entry.hit.name,
         };
       });
 
-      const landedWait = waitForLandings(flights.length, id);
+      const landedWait = waitForLandings(
+        flights.map((flight) => flight.key),
+        id,
+      );
       setState((current) =>
         runId.current === id
           ? {
               ...current,
-              flights,
+              flights: [...current.flights, ...flights],
               pile: current.pile.filter((item) => !ids.has(item.id)),
             }
           : current,
@@ -482,72 +484,117 @@ export function SorterApp() {
       await landedWait;
     }
 
+    const acceptLabel = (item: QueueItem, hit: LabelHit | null) => {
+      if (runId.current !== id) return;
+      if (!hit) {
+        removed.add(item.id);
+        setState((current) =>
+          runId.current === id
+            ? {
+                ...current,
+                unreadable: current.unreadable + 1,
+                pile: current.pile.filter((entry) => entry.id !== item.id),
+              }
+            : current,
+        );
+        return;
+      }
+      held.push({ item, hit });
+      setState((current) =>
+        runId.current === id ? { ...current, labeled: current.labeled + 1 } : current,
+      );
+    };
+
+    const labelOne = async (item: QueueItem) => {
+      let hit: LabelHit | null = null;
+      try {
+        hit =
+          mode === "clip"
+            ? await classifyWithClip(item.classifyFrames)
+            : await classifyFramesWithFallback(item.classifyFrames);
+      } catch (error) {
+        if (mode === "clip" && isModelRuntimeError(error)) {
+          mode = "fallback";
+          setState((current) =>
+            runId.current === id ? { ...current, mode: "fallback", notice: fallbackNotice() } : current,
+          );
+          try {
+            hit = await classifyFramesWithFallback(item.classifyFrames);
+          } catch {
+            hit = null;
+          }
+        }
+      }
+      acceptLabel(item, hit);
+    };
+
     const producer = (async () => {
       try {
         let cursor = 0;
         while (runId.current === id) {
-          if (cursor >= prepared.length) {
+          const pendingCount = prepared.length - cursor;
+          if (pendingCount <= 0) {
             if (prepDone) break;
+            await sleep(16);
+            continue;
+          }
+          // Let a few files gather so one model pass covers the flock,
+          // unless preparation has already finished.
+          if (!prepDone && pendingCount < 4) {
             await sleep(30);
             continue;
           }
-          const item = prepared[cursor];
-          cursor += 1;
-          let hit: LabelHit | null = null;
-          try {
-            hit =
-              mode === "clip"
-                ? await classifyWithClip(item.classifyBlob)
-                : await classifyBlobWithFallback(item.classifyBlob);
-          } catch (error) {
-            if (mode === "clip" && isModelRuntimeError(error)) {
-              mode = "fallback";
-              setState((current) =>
-                runId.current === id ? { ...current, mode: "fallback", notice: fallbackNotice() } : current,
-              );
-              try {
-                hit = await classifyBlobWithFallback(item.classifyBlob);
-              } catch {
-                hit = null;
+          const batch: QueueItem[] = [];
+          let frames = 0;
+          while (cursor < prepared.length && batch.length < 8 && frames < 10) {
+            const next = prepared[cursor];
+            const count = Math.max(1, next.classifyFrames.length);
+            if (batch.length > 0 && frames + count > 10) break;
+            batch.push(next);
+            frames += count;
+            cursor += 1;
+          }
+          if (mode === "clip" && batch.length > 1) {
+            try {
+              const hits = await classifyManyWithClip(batch.map((item) => item.classifyFrames));
+              batch.forEach((item, index) => acceptLabel(item, hits[index] ?? null));
+              continue;
+            } catch (error) {
+              if (isModelRuntimeError(error)) {
+                mode = "fallback";
+                setState((current) =>
+                  runId.current === id
+                    ? { ...current, mode: "fallback", notice: fallbackNotice() }
+                    : current,
+                );
               }
             }
           }
-          if (runId.current !== id) return;
-          if (!hit) {
-            removed.add(item.id);
-            setState((current) =>
-              runId.current === id
-                ? {
-                    ...current,
-                    unreadable: current.unreadable + 1,
-                    pile: current.pile.filter((entry) => entry.id !== item.id),
-                  }
-                : current,
-            );
-            continue;
+          for (const item of batch) {
+            if (runId.current !== id) return;
+            await labelOne(item);
           }
-          held.push({ item, hit });
-          setState((current) =>
-            runId.current === id ? { ...current, labeled: current.labeled + 1 } : current,
-          );
-          await sleep(0);
         }
       } finally {
         producerDone = true;
       }
     })();
 
+    const pendingFlights: Promise<void>[] = [];
+    const folderTotal = partition.supported.length;
     const consumer = (async () => {
       while (runId.current === id) {
-        const take = flockWaveSize(held.length, producerDone);
+        const take = flockReleaseCount(held.length, producerDone, folderTotal);
         if (take > 0) {
           const wave = held.splice(0, take);
-          await launchWave(wave);
+          pendingFlights.push(launchWave(wave));
+          await sleep(FLOCK_STAGGER_MS);
           continue;
         }
-        if (producerDone) return;
-        await sleep(24);
+        if (producerDone) break;
+        await sleep(16);
       }
+      await Promise.all(pendingFlights);
     })();
 
     try {

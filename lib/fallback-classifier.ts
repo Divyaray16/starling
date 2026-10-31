@@ -1,5 +1,6 @@
-import { labelById, PROVISIONAL_VOCABULARY } from "@/lib/vocabulary";
+import { chooseConcept, combineFrameScores, type ConceptScore } from "@/lib/rank";
 import type { LabelHit } from "@/lib/types";
+import { PROVISIONAL_VOCABULARY } from "@/lib/vocabulary";
 
 /**
  * Small on-device reader used only when the CLIP model cannot be downloaded.
@@ -20,6 +21,8 @@ export type ImageFeatures = {
   warm: number;
   dark: number;
   contrast: number;
+  /** Cyan and blue pixels, typical of water and underwater frames. */
+  blue: number;
 };
 
 export function extractFeatures(
@@ -41,6 +44,7 @@ export function extractFeatures(
       warm: 0,
       dark: 0,
       contrast: 0,
+      blue: 0,
     };
   }
 
@@ -53,6 +57,7 @@ export function extractFeatures(
   let green = 0;
   let warm = 0;
   let dark = 0;
+  let blue = 0;
   let brightness = 0;
   let brightnessSq = 0;
   let edge = 0;
@@ -80,6 +85,7 @@ export function extractFeatures(
       if (isSkin(r, g, b)) skin += 1;
       if (g > r + 12 && g > b + 8 && sat > 0.2) green += 1;
       if (r > g + 10 && g > b && sat > 0.28 && r > 90) warm += 1;
+      if (b > r + 12 && g + 6 > r && b > 70 && sat > 0.12) blue += 1;
 
       const inCenter =
         x > width * 0.25 &&
@@ -125,6 +131,7 @@ export function extractFeatures(
     warm: warm / pixels,
     dark: dark / pixels,
     contrast: Math.min(1, Math.sqrt(variance) * 3.2),
+    blue: blue / pixels,
   };
 }
 
@@ -153,7 +160,9 @@ const SCORERS: Record<string, (features: ImageFeatures) => number> = {
     0.5 * f.saturation -
     2.2 * f.skinCenter -
     1.1 * f.gray -
-    0.7 * f.sky,
+    0.7 * f.sky -
+    2.6 * f.blue,
+  fish: (f) => 2.5 * f.blue + 0.7 * f.saturation + 0.45 * f.edge - 1.8 * f.skin - 1.1 * f.gray - 0.5 * f.warm,
   food: (f) =>
     2.6 * f.warm + 1.5 * f.saturation + 0.4 * f.contrast - 1.8 * f.skin - 1.1 * f.sky - 1.2 * f.gray,
   landscape: (f) =>
@@ -174,30 +183,32 @@ const SCORERS: Record<string, (features: ImageFeatures) => number> = {
     1.5 * f.gray -
     0.8 * f.skinCenter,
   plant: (f) => 3 * f.green + 0.6 * f.saturation - 1.2 * f.skin - 0.8 * f.gray,
-  vehicle: (f) => 0.8 * f.edge + 0.4 * f.contrast + 0.3 * f.dark - 1.2 * f.skin - 0.6 * f.gray,
-  interior: (f) => 0.7 * (1 - f.sky) + 0.4 * f.warm - 0.8 * f.gray - 0.5 * f.green,
-  water: (f) => 1.6 * f.sky + 0.4 * f.saturation - 1.2 * f.skin - 0.6 * f.warm - 0.5 * f.gray,
+  vehicle: (f) =>
+    1.15 * f.edge + 0.45 * f.contrast + 0.35 * (1 - f.blue) - 1.2 * f.skin - 0.7 * f.gray - 1.1 * f.blue,
+  boat: (f) => 0.65 * f.edge + 0.55 * f.blue + 0.3 * f.contrast + 0.25 * f.sky - 0.7 * f.skinCenter - 0.45 * f.gray,
+  wreck: (f) => 1.45 * f.blue + 1.25 * f.edge + 0.85 * f.dark - 1.5 * f.skin - 0.55 * f.gray,
+  diving: (f) => 1.55 * f.blue + 1.45 * f.skin + 0.45 * f.contrast - 0.7 * f.gray - 0.35 * f.warm,
+  interior: (f) => 0.7 * (1 - f.sky) + 0.4 * f.warm - 0.8 * f.gray - 0.5 * f.green - 0.6 * f.blue,
+  water: (f) => 1.35 * f.blue + 1.1 * f.sky - 0.85 * f.edge - 1.4 * f.skin - 0.55 * f.warm - 0.4 * f.gray,
   night: (f) => 2.4 * f.dark + 0.6 * f.contrast - 0.8 * f.gray - 0.4 * f.skin,
   crowd: (f) => 1.4 * f.skin + 0.8 * f.edge + 0.4 * f.contrast - 1.2 * f.skinCenter * 0.3 - 0.6 * f.gray,
   artwork: (f) => 0.6 * f.contrast + 0.4 * f.saturation - 0.4 * f.gray,
   sky: (f) => 2.2 * f.sky + 0.3 * (1 - f.edge) - 1.4 * f.skin - 0.8 * f.warm,
 };
 
-export function classifyFeatures(features: ImageFeatures): LabelHit {
-  let bestId = PROVISIONAL_VOCABULARY[0].id;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const label of PROVISIONAL_VOCABULARY) {
-    const score = SCORERS[label.id]?.(features) ?? 0;
-    if (score > bestScore) {
-      bestScore = score;
-      bestId = label.id;
-    }
-  }
-  const label = labelById(bestId) ?? PROVISIONAL_VOCABULARY[0];
-  return { id: label.id, name: label.name, score: bestScore };
+export function scoreFeatures(features: ImageFeatures): ConceptScore[] {
+  return PROVISIONAL_VOCABULARY.map((label) => ({
+    id: label.id,
+    name: label.name,
+    score: SCORERS[label.id]?.(features) ?? 0,
+  }));
 }
 
-export async function classifyBlobWithFallback(blob: Blob): Promise<LabelHit> {
+export function classifyFeatures(features: ImageFeatures): LabelHit {
+  return chooseConcept(scoreFeatures(features));
+}
+
+async function scoreBlob(blob: Blob): Promise<ConceptScore[]> {
   const bitmap = await createImageBitmap(blob);
   try {
     const edge = 96;
@@ -213,8 +224,27 @@ export async function classifyBlobWithFallback(blob: Blob): Promise<LabelHit> {
     }
     context.drawImage(bitmap, 0, 0, width, height);
     const image = context.getImageData(0, 0, width, height);
-    return classifyFeatures(extractFeatures(image.data, width, height));
+    return scoreFeatures(extractFeatures(image.data, width, height));
   } finally {
     bitmap.close();
   }
+}
+
+export async function classifyFramesWithFallback(blobs: Blob[]): Promise<LabelHit> {
+  const frames: ConceptScore[][] = [];
+  for (const blob of blobs) {
+    try {
+      frames.push(await scoreBlob(blob));
+    } catch {
+      // A later frame can still carry the file.
+    }
+  }
+  if (frames.length === 0) {
+    throw new Error("This file couldn't be read.");
+  }
+  return chooseConcept(combineFrameScores(frames));
+}
+
+export async function classifyBlobWithFallback(blob: Blob): Promise<LabelHit> {
+  return classifyFramesWithFallback([blob]);
 }

@@ -5,8 +5,36 @@ import { FLOCK_FLIGHT_MS } from "@/lib/flock";
 import type { MediaKind, Point } from "@/lib/types";
 import { useEffect, useRef } from "react";
 
-function ease(t: number) {
-  return 1 - Math.pow(1 - t, 3);
+/**
+ * Custom cubic-bezier(0.22, 0.82, 0.18, 1): a quick lift off the pile and a
+ * soft settle into the row. Not a linear slide.
+ */
+const EASE_X1 = 0.22;
+const EASE_Y1 = 0.82;
+const EASE_X2 = 0.18;
+const EASE_Y2 = 1;
+
+function cubicBezier(t: number, x1: number, y1: number, x2: number, y2: number): number {
+  const cx = 3 * x1;
+  const bx = 3 * (x2 - x1) - cx;
+  const ax = 1 - cx - bx;
+  const cy = 3 * y1;
+  const by = 3 * (y2 - y1) - cy;
+  const ay = 1 - cy - by;
+  const sampleX = (u: number) => ((ax * u + bx) * u + cx) * u;
+  const sampleY = (u: number) => ((ay * u + by) * u + cy) * u;
+  const sampleDX = (u: number) => (3 * ax * u + 2 * bx) * u + cx;
+  let u = t;
+  for (let step = 0; step < 6; step += 1) {
+    const slope = sampleDX(u);
+    if (Math.abs(slope) < 1e-6) break;
+    u = Math.min(1, Math.max(0, u - (sampleX(u) - t) / slope));
+  }
+  return sampleY(u);
+}
+
+function flightEase(t: number) {
+  return cubicBezier(t, EASE_X1, EASE_Y1, EASE_X2, EASE_Y2);
 }
 
 function quad(a: number, b: number, c: number, t: number) {
@@ -55,7 +83,7 @@ export function FlightTile({
     let finished = false;
     const start = performance.now();
     const control = {
-      x: from.x + (to.x - from.x) * 0.42,
+      x: (from.x + to.x) / 2 + weave,
       y: Math.min(from.y, to.y) - lift,
     };
 
@@ -65,7 +93,7 @@ export function FlightTile({
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      place(to.x, to.y, 0, 0.9);
+      place(to.x, to.y, 0, 0.92);
       doneRef.current();
       return;
     }
@@ -78,12 +106,13 @@ export function FlightTile({
         return;
       }
       const t = Math.min(1, elapsed / duration);
-      const eased = ease(t);
-      const sway = Math.sin(eased * Math.PI) * weave;
-      const x = quad(from.x, control.x, to.x, eased) + sway;
+      const eased = flightEase(t);
+      const x = quad(from.x, control.x, to.x, eased);
       const y = quad(from.y, control.y, to.y, eased);
-      const rotation = tilt * (1 - eased) + Math.sin(eased * Math.PI) * 5;
-      const scale = 1 - eased * 0.1 + Math.sin(eased * Math.PI) * 0.045;
+      const along = Math.sin(eased * Math.PI);
+      const rotation = tilt * (1 - eased) + along * (weave >= 0 ? 8 : -8);
+      // A small breath in the air, then a slight scale settle as it docks.
+      const scale = 1 - eased * 0.08 + along * 0.055;
       place(x, y, rotation, scale);
       if (t < 1) {
         frame = requestAnimationFrame(tick);

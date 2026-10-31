@@ -62,13 +62,14 @@ export function partitionFiles(files: File[]): Partition {
 export async function prepareQueueItem(file: File): Promise<QueueItem> {
   const kind = mediaKind(file);
   if (kind === "video") {
-    const frame = await captureVideoFrame(file);
+    const frames = await captureVideoFrames(file);
+    const thumb = frames[Math.min(frames.length - 1, Math.floor(frames.length / 2))] ?? frames[0];
     return {
       id: crypto.randomUUID(),
       name: file.name,
       kind: "video",
-      thumbUrl: URL.createObjectURL(frame),
-      classifyBlob: frame,
+      thumbUrl: URL.createObjectURL(thumb),
+      classifyFrames: frames,
       file,
     };
   }
@@ -79,7 +80,7 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
       name: file.name,
       kind: "photo",
       thumbUrl: URL.createObjectURL(still),
-      classifyBlob: still,
+      classifyFrames: [still],
       file,
     };
   }
@@ -92,7 +93,7 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
     name: file.name,
     kind: "photo",
     thumbUrl: URL.createObjectURL(still),
-    classifyBlob: still,
+    classifyFrames: [still],
     file,
   };
 }
@@ -140,7 +141,52 @@ function canvasJpeg(source: CanvasImageSource, width: number, height: number): P
   });
 }
 
-export function captureVideoFrame(file: File): Promise<Blob> {
+/**
+ * Sample times for a video. Three frames — start, middle, end — when the
+ * clip is long enough for them to be distinct. Shorter clips use fewer.
+ */
+export function videoSampleTimes(duration: number): number[] {
+  if (!Number.isFinite(duration) || duration < 0.2) return [0];
+  const clamp = (time: number) => Math.min(Math.max(0, time), Math.max(0, duration - 0.04));
+  const start = clamp(Math.min(0.1, duration * 0.08));
+  const middle = clamp(duration * 0.5);
+  const end = clamp(duration * 0.92);
+  const distinct: number[] = [];
+  for (const time of [start, middle, end]) {
+    if (distinct.every((kept) => Math.abs(kept - time) >= 0.12)) distinct.push(time);
+  }
+  return distinct.length > 0 ? distinct : [middle];
+}
+
+function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+  if (Math.abs(video.currentTime - time) < 0.001 && video.readyState >= 2) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+    };
+    const onSeeked = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("This video couldn't be read."));
+    };
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("error", onError);
+    try {
+      video.currentTime = time;
+    } catch (error) {
+      cleanup();
+      reject(error instanceof Error ? error : new Error("This video couldn't be read."));
+    }
+  });
+}
+
+export function captureVideoFrames(file: File): Promise<Blob[]> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
@@ -156,19 +202,15 @@ export function captureVideoFrame(file: File): Promise<Blob> {
     };
     const timer = window.setTimeout(() => {
       finish(() => reject(new Error("This video couldn't be read.")));
-    }, 8000);
+    }, 12000);
 
     const draw = () => {
       const width = video.videoWidth;
       const height = video.videoHeight;
       if (!width || !height) {
-        finish(() => reject(new Error("This video couldn't be read.")));
-        return;
+        throw new Error("This video couldn't be read.");
       }
-      canvasJpeg(video, width, height).then(
-        (blob) => finish(() => resolve(blob)),
-        () => finish(() => reject(new Error("This video couldn't be read."))),
-      );
+      return canvasJpeg(video, width, height);
     };
 
     video.muted = true;
@@ -183,17 +225,46 @@ export function captureVideoFrame(file: File): Promise<Blob> {
       "loadeddata",
       () => {
         const duration = Number.isFinite(video.duration) ? video.duration : 0;
-        const target = duration > 0.2 ? Math.min(0.45, duration * 0.2) : 0;
-        if (target <= 0) {
-          draw();
-          return;
-        }
-        video.addEventListener("seeked", () => draw(), { once: true });
-        try {
-          video.currentTime = target;
-        } catch {
-          draw();
-        }
+        const times = videoSampleTimes(duration);
+        const frames: Blob[] = [];
+        const next = (index: number) => {
+          if (settled) return;
+          if (index >= times.length) {
+            if (frames.length === 0) {
+              finish(() => reject(new Error("This video couldn't be read.")));
+              return;
+            }
+            finish(() => resolve(frames));
+            return;
+          }
+          seekVideo(video, times[index]).then(
+            () =>
+              draw().then(
+                (blob) => {
+                  frames.push(blob);
+                  next(index + 1);
+                },
+                () => {
+                  if (frames.length === 0 && index === times.length - 1) {
+                    finish(() => reject(new Error("This video couldn't be read.")));
+                    return;
+                  }
+                  next(index + 1);
+                },
+              ),
+            () => {
+              if (frames.length === 0) {
+                draw().then(
+                  (blob) => finish(() => resolve([blob])),
+                  () => finish(() => reject(new Error("This video couldn't be read."))),
+                );
+                return;
+              }
+              finish(() => resolve(frames));
+            },
+          );
+        };
+        next(0);
       },
       { once: true },
     );

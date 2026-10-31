@@ -1,8 +1,9 @@
-import { createClipClassifier, rankWithClip, type ModelProgress } from "@/lib/clip-runtime";
+import { createClipClassifier, rankGroupsWithClip, rankWithClip, type ModelProgress } from "@/lib/clip-runtime";
 
 type Inbound =
   | { type: "load" }
-  | { type: "classify"; requestId: number; blob: Blob };
+  | { type: "classify"; requestId: number; blobs: Blob[] }
+  | { type: "classify-many"; requestId: number; groups: Blob[][] };
 
 type Classifier = Awaited<ReturnType<typeof createClipClassifier>>;
 
@@ -44,7 +45,12 @@ scope.onmessage = async (event) => {
     const classifier = await model((progress) => {
       scope.postMessage({ type: "progress", progress });
     });
-    const hit = await rankWithClip(classifier, message.blob);
+    if (message.type === "classify-many") {
+      const hits = await rankGroupsWithClip(classifier, message.groups);
+      scope.postMessage({ type: "result-many", requestId: message.requestId, hits });
+      return;
+    }
+    const hit = await rankWithClip(classifier, message.blobs);
     scope.postMessage({ type: "result", requestId: message.requestId, hit });
   } catch (error) {
     scope.postMessage({

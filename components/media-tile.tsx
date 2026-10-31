@@ -19,14 +19,15 @@ export function MediaTile({
     <figure
       className={cn(
         "relative",
-        framed && "bg-white p-1 shadow-[0_16px_34px_rgba(90,40,55,0.14)]",
+        framed &&
+          "overflow-hidden rounded-[1.15rem] bg-white p-1 shadow-[0_14px_32px_rgba(90,40,55,0.14),0_2px_8px_rgba(90,40,55,0.06)]",
         className,
       )}
     >
       <div className="relative">
         {/* Blob and object URLs are local files; next/image cannot optimize them. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={name} className="aspect-[4/5] h-full w-full object-cover" />
+        <img src={src} alt={name} className="aspect-[4/5] h-full w-full rounded-[0.85rem] object-cover" />
         <Badge
           variant="secondary"
           className="absolute bottom-1.5 left-1.5 h-4 border-0 bg-[#171717]/88 px-1.5 text-[10px] tracking-wide text-white uppercase"

@@ -5,7 +5,11 @@ export type QueueItem = {
   name: string;
   kind: MediaKind;
   thumbUrl: string;
-  classifyBlob: Blob;
+  /**
+   * Frames the classifier scores. Photos have one. Videos have up to three
+   * (start, middle, end) so a single frame does not decide.
+   */
+  classifyFrames: Blob[];
   /** Original file. HEIC stays HEIC here; thumbUrl may be a JPEG preview. */
   file: File;
 };

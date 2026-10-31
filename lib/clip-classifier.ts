@@ -1,4 +1,9 @@
-import { createClipClassifier, rankWithClip, type ModelProgress } from "@/lib/clip-runtime";
+import {
+  createClipClassifier,
+  rankGroupsWithClip,
+  rankWithClip,
+  type ModelProgress,
+} from "@/lib/clip-runtime";
 import type { LabelHit } from "@/lib/types";
 
 type WorkerResponse =
@@ -6,10 +11,11 @@ type WorkerResponse =
   | { type: "ready" }
   | { type: "model-error"; message: string }
   | { type: "result"; requestId: number; hit: LabelHit }
+  | { type: "result-many"; requestId: number; hits: LabelHit[] }
   | { type: "file-error"; requestId: number; message: string };
 
 type Pending = {
-  resolve: (hit: LabelHit) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
 };
 
@@ -60,6 +66,7 @@ function bootWorker(): Worker | null {
     if (!waiter) return;
     pending.delete(message.requestId);
     if (message.type === "result") waiter.resolve(message.hit);
+    else if (message.type === "result-many") waiter.resolve(message.hits);
     else waiter.reject(new Error(message.message));
   };
 
@@ -114,23 +121,52 @@ export async function loadClipModel(): Promise<void> {
   }
 }
 
-export async function classifyWithClip(blob: Blob): Promise<LabelHit> {
+export async function classifyWithClip(frames: Blob[]): Promise<LabelHit> {
+  const blobs = frames.filter((frame) => frame.size > 0);
   if (useMainThread) {
     const classifier = await ensureMainClassifier();
-    return rankWithClip(classifier, blob);
+    return rankWithClip(classifier, blobs);
   }
 
   const instance = bootWorker();
   if (!instance) {
     useMainThread = true;
     const classifier = await ensureMainClassifier();
-    return rankWithClip(classifier, blob);
+    return rankWithClip(classifier, blobs);
   }
 
   const id = ++requestId;
   return new Promise<LabelHit>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    instance.postMessage({ type: "classify", requestId: id, blob });
+    pending.set(id, {
+      resolve: (value) => resolve(value as LabelHit),
+      reject,
+    });
+    instance.postMessage({ type: "classify", requestId: id, blobs });
+  });
+}
+
+/** Score several files in one model pass. Each entry is one file's frames. */
+export async function classifyManyWithClip(groups: Blob[][]): Promise<LabelHit[]> {
+  const frames = groups.map((group) => group.filter((blob) => blob.size > 0));
+  if (useMainThread) {
+    const classifier = await ensureMainClassifier();
+    return rankGroupsWithClip(classifier, frames);
+  }
+
+  const instance = bootWorker();
+  if (!instance) {
+    useMainThread = true;
+    const classifier = await ensureMainClassifier();
+    return rankGroupsWithClip(classifier, frames);
+  }
+
+  const id = ++requestId;
+  return new Promise<LabelHit[]>((resolve, reject) => {
+    pending.set(id, {
+      resolve: (value) => resolve(value as LabelHit[]),
+      reject,
+    });
+    instance.postMessage({ type: "classify-many", requestId: id, groups: frames });
   });
 }
 

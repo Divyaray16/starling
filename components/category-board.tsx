@@ -4,7 +4,7 @@ import { MediaTile } from "@/components/media-tile";
 import { Button } from "@/components/ui/button";
 import type { CategoryRow } from "@/lib/types";
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function countLabel(count: number) {
   if (count === 0) return "Landing";
@@ -56,7 +56,45 @@ export function CategoryBoard({
     <div className="px-6 pb-12 sm:px-10">
       <ul className="divide-y divide-[#eadfd6]">
         {categories.map((category) => (
-          <li key={category.id} className="category-enter py-4" data-category={category.id}>
+          <CategoryLine key={category.id} category={category} settled={settled} onOpen={onOpen} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function useLandingWarmth(count: number) {
+  const [warm, setWarm] = useState(false);
+  const previous = useRef(count);
+  useEffect(() => {
+    if (count <= previous.current) {
+      previous.current = count;
+      return;
+    }
+    previous.current = count;
+    setWarm(true);
+    const timer = window.setTimeout(() => setWarm(false), 640);
+    return () => window.clearTimeout(timer);
+  }, [count]);
+  return warm;
+}
+
+function CategoryLine({
+  category,
+  settled,
+  onOpen,
+}: {
+  category: CategoryRow;
+  settled: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const warm = useLandingWarmth(category.items.length);
+  return (
+          <li
+            className="category-row category-enter relative rounded-2xl px-2 py-4"
+            data-category={category.id}
+            data-warm={warm ? "true" : "false"}
+          >
             <div className="flex items-baseline justify-between gap-4">
               {settled ? (
                 <button
@@ -99,9 +137,6 @@ export function CategoryBoard({
               ))}
             </div>
           </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
