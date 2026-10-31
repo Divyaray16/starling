@@ -120,6 +120,18 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function markDirectoryInput(node: HTMLInputElement | null) {
+  if (!node) return;
+  node.multiple = true;
+  node.setAttribute("webkitdirectory", "");
+  node.setAttribute("directory", "");
+  try {
+    (node as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true;
+  } catch {
+    // The content attribute is already present when the property is read-only.
+  }
+}
+
 function nextPaint() {
   return new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -838,19 +850,23 @@ export function SorterApp() {
             <label
               className={cn(
                 buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                "h-11 cursor-pointer px-4",
+                "media-picker h-11 cursor-pointer px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                 settled && "bg-transparent",
               )}
             >
-              Choose files
+              <span className="pointer-events-none">
+                Choose files
+                <span className="font-normal opacity-75"> · images and videos</span>
+              </span>
               <input
                 id="photo-file-input"
                 type="file"
                 name="photos"
                 multiple
                 accept={MEDIA_ACCEPT}
-                aria-label="Choose files"
-                className="sr-only"
+                aria-label="Choose files — images and videos"
+                title="Choose images and videos"
+                className="media-picker-input"
                 onChange={onFiles}
               />
             </label>
@@ -858,18 +874,24 @@ export function SorterApp() {
               <label
                 className={cn(
                   buttonVariants({ size: "lg", variant: "outline" }),
-                  "h-10 cursor-pointer bg-transparent px-3.5",
+                  "media-picker h-10 cursor-pointer bg-transparent px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                 )}
               >
-                <FolderOpen data-icon="inline-start" />
-                Choose a folder
+                <span className="pointer-events-none inline-flex items-center gap-1.5">
+                  <FolderOpen data-icon="inline-start" />
+                  Choose a folder
+                </span>
                 <input
                   id="folder-file-input"
+                  ref={markDirectoryInput}
                   type="file"
-                  className="sr-only"
+                  name="folder"
+                  multiple
                   aria-label="Choose a folder of photos and videos"
-                  {...{ webkitdirectory: "", directory: "" }}
+                  title="Choose a folder"
+                  className="media-picker-input"
                   onChange={onDirectory}
+                  {...{ webkitdirectory: "", directory: "" }}
                 />
               </label>
               <Button
