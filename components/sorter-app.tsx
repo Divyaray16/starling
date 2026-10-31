@@ -3,7 +3,7 @@
 import { CategoryRail } from "@/components/category-rail";
 import { FlightTile } from "@/components/flight-tile";
 import { PileStage } from "@/components/pile-stage";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   classifyWithClip,
   isModelRuntimeError,
@@ -15,14 +15,12 @@ import { classifyBlobWithFallback } from "@/lib/fallback-classifier";
 import {
   filesFromDataTransfer,
   filesFromList,
-  FolderPermissionError,
   partitionFiles,
-  pickDirectory,
   prepareQueueItem,
-  supportsDirectoryPicker,
 } from "@/lib/intake";
 import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { FolderOpen, Images } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -43,8 +41,8 @@ const EMPTY_COPY = {
   total: 0,
   classified: 0,
   skipped: 0,
-  heic: 0,
   unreadable: 0,
+  decodeFailures: [] as string[],
   currentName: null as string | null,
   modelLine: null as string | null,
   modelRatio: null as number | null,
@@ -86,7 +84,6 @@ export function SorterApp() {
   const runId = useRef(0);
   const urls = useRef<string[]>([]);
   const flightDone = useRef<(() => void) | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const landedRef = useRef<CategoryRow[]>([]);
 
   useEffect(() => {
@@ -116,11 +113,8 @@ export function SorterApp() {
       setState({
         ...EMPTY_COPY,
         error:
-          partition.heic > 0
-            ? "That folder only had files this browser can’t sort. HEIC isn’t supported. JPEG, PNG, WebP, GIF, MP4, WebM, and MOV are."
-            : "That folder doesn’t have any JPEG, PNG, WebP, GIF, MP4, WebM, or MOV files.",
+          "That folder doesn’t have any JPEG, PNG, WebP, GIF, HEIC, HEIF, MP4, WebM, or MOV files.",
         skipped: partition.skipped,
-        heic: partition.heic,
       });
       return;
     }
@@ -131,7 +125,6 @@ export function SorterApp() {
       folderName,
       total: partition.supported.length,
       skipped: partition.skipped,
-      heic: partition.heic,
       modelLine: "Loading the vision model. It stays in this browser.",
       modelRatio: 0.04,
     });
@@ -159,6 +152,7 @@ export function SorterApp() {
     landedRef.current = [];
     let prepDone = false;
     let unreadable = 0;
+    const decodeFailures: string[] = [];
     const removed = new Set<string>();
 
     const syncPile = () => {
@@ -183,8 +177,10 @@ export function SorterApp() {
           syncPile();
         } catch {
           unreadable += 1;
+          decodeFailures.push(file.name);
+          const failed = [...decodeFailures];
           setState((current) =>
-            runId.current === id ? { ...current, unreadable } : current,
+            runId.current === id ? { ...current, unreadable, decodeFailures: failed } : current,
           );
         }
       }
@@ -333,31 +329,6 @@ export function SorterApp() {
     );
   }
 
-  async function onChooseFolder() {
-    try {
-      const picked = await pickDirectory();
-      if (picked === null && supportsDirectoryPicker()) return;
-      if (picked) {
-        await begin(picked.folderName, picked.files);
-        return;
-      }
-    } catch (error) {
-      if (error instanceof FolderPermissionError) {
-        setState((current) => ({
-          ...current,
-          error: "The browser wouldn’t open that folder. Try again, or drop the folder on the pile.",
-        }));
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        error: "That folder couldn’t be read. Try again, or drop it on the pile.",
-      }));
-      return;
-    }
-    inputRef.current?.click();
-  }
-
   async function onSample() {
     setState((current) => ({ ...current, error: null }));
     try {
@@ -454,10 +425,23 @@ export function SorterApp() {
           ) : null}
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button type="button" size="lg" className="h-10 px-3.5" onClick={onChooseFolder}>
+            <label
+              className={cn(
+                buttonVariants({ size: "lg" }),
+                "relative h-10 cursor-pointer px-3.5",
+              )}
+            >
               <FolderOpen data-icon="inline-start" />
               {state.phase === "empty" ? "Choose a folder" : "Choose another folder"}
-            </Button>
+              <input
+                type="file"
+                multiple
+                className="absolute inset-0 z-10 cursor-pointer opacity-0"
+                aria-label="Choose a folder of photos and videos"
+                {...{ webkitdirectory: "", directory: "" }}
+                onChange={onInput}
+              />
+            </label>
             <Button
               type="button"
               size="lg"
@@ -498,7 +482,11 @@ export function SorterApp() {
               {state.error}
             </p>
           ) : null}
-          <SkipLine skipped={state.skipped} heic={state.heic} unreadable={state.unreadable} />
+          <SkipLine
+            skipped={state.skipped}
+            unreadable={state.unreadable}
+            decodeFailures={state.decodeFailures}
+          />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <CategoryRail categories={state.categories} sorting={sorting} />
@@ -520,47 +508,42 @@ export function SorterApp() {
         />
       ) : null}
 
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        className="sr-only"
-        aria-label="Choose a folder of photos and videos"
-        {...{ webkitdirectory: "", directory: "" }}
-        onChange={onInput}
-      />
     </div>
   );
 }
 
 function SkipLine({
   skipped,
-  heic,
   unreadable,
+  decodeFailures,
 }: {
   skipped: number;
-  heic: number;
   unreadable: number;
+  decodeFailures: string[];
 }) {
-  if (skipped === 0 && unreadable === 0) return null;
+  if (skipped === 0 && unreadable === 0 && decodeFailures.length === 0) return null;
   const parts: string[] = [];
   if (skipped > 0) {
-    const noun = skipped === 1 ? "file" : "files";
-    if (heic > 0 && heic === skipped) {
-      parts.push(
-        `Skipped ${skipped} HEIC ${noun}. This browser can’t read HEIC.`,
-      );
-    } else if (heic > 0) {
-      parts.push(
-        `Skipped ${skipped} ${noun}, including ${heic} HEIC, which this browser can’t read.`,
-      );
-    } else {
-      parts.push(`Skipped ${skipped} ${noun} that aren’t photos or videos this browser can read.`);
-    }
-  }
-  if (unreadable > 0) {
     parts.push(
-      `${unreadable} ${unreadable === 1 ? "file" : "files"} couldn’t be read and ${unreadable === 1 ? "was" : "were"} left out.`,
+      skipped === 1
+        ? "Skipped 1 file that isn’t a photo or video this browser can read."
+        : `Skipped ${skipped} files that aren’t photos or videos this browser can read.`,
+    );
+  }
+  if (decodeFailures.length === 1) {
+    parts.push(`Couldn’t decode ${decodeFailures[0]}. That file was left out.`);
+  } else if (decodeFailures.length > 1) {
+    const shown = decodeFailures.slice(0, 3).join(", ");
+    const extra =
+      decodeFailures.length > 3 ? `, and ${decodeFailures.length - 3} more` : "";
+    parts.push(
+      `Couldn’t decode ${decodeFailures.length} files (${shown}${extra}). Those files were left out.`,
+    );
+  }
+  const other = unreadable - decodeFailures.length;
+  if (other > 0) {
+    parts.push(
+      `${other} ${other === 1 ? "file" : "files"} couldn’t be read and ${other === 1 ? "was" : "were"} left out.`,
     );
   }
   return <p className="mt-3 max-w-lg text-sm text-[#6e6258]">{parts.join(" ")}</p>;

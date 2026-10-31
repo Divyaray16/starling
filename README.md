@@ -15,9 +15,9 @@ The dev server listens on [http://127.0.0.1:43127](http://127.0.0.1:43127) (`0.0
 
 ## What stays in the browser
 
-Files are read with the File System Access API (`showDirectoryPicker`) in Chromium. Other browsers get a folder input (`webkitdirectory`) and you can drop a folder onto the page. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
+Choose a folder uses a folder input (`webkitdirectory`). You can also drop a folder onto the pile. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
 
-Photos (JPEG, PNG, WebP, GIF) and videos (MP4, WebM, MOV) can share a category. A video is labeled from one frame drawn to a canvas. Each tile is badged Photo or Video. HEIC is skipped, and the page says how many files were skipped.
+Photos (JPEG, PNG, WebP, GIF, HEIC, HEIF) and videos (MP4, WebM, MOV) can share a category. HEIC and HEIF are decoded in this browser with [libheif](https://github.com/strukturag/libheif) (the `libheif-js` wasm build) to a bitmap, drawn to a canvas, and then labeled the same way as a JPEG, including the flight animation. A video is labeled from one frame drawn to a canvas. Each tile is badged Photo or Video. A file that cannot be decoded is named on its own; the rest of the folder still sorts. Other files that are not photos or videos are skipped, and the page says how many.
 
 ## Categories are provisional
 
@@ -41,7 +41,7 @@ The clip is a one-second view of the Shibuya photograph so the video path can be
 
 ## Limits
 
-- HEIC and HEIF are skipped. Export JPEG or use a browser that can decode them first.
-- The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache.
+- HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
+- The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload.
 - Very large folders stay responsive by labeling one file at a time and drawing only a sample of the resting pile.
-- Folder picking via `showDirectoryPicker` needs a Chromium browser. Elsewhere, use the folder button’s file input or drop the folder.
+- Choose a folder opens a folder input. You can also drop a folder on the pile.

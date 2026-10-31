@@ -1,15 +1,15 @@
-import type { MediaKind, QueueItem } from "@/lib/types";
+import { decodeHeicBitmap } from "./heic";
+import type { MediaKind, QueueItem } from "./types";
 
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov"]);
 const HEIC_EXTENSIONS = new Set(["heic", "heif"]);
-
-export class FolderPermissionError extends Error {
-  constructor() {
-    super("The browser blocked that folder.");
-    this.name = "FolderPermissionError";
-  }
-}
+const HEIC_TYPES = new Set([
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
 
 export type FolderRead = {
   folderName: string;
@@ -19,7 +19,6 @@ export type FolderRead = {
 export type Partition = {
   supported: File[];
   skipped: number;
-  heic: number;
 };
 
 function extensionOf(name: string): string {
@@ -31,7 +30,7 @@ function extensionOf(name: string): string {
 export function mediaKind(file: File): MediaKind | "heic" | "skip" {
   const extension = extensionOf(file.name);
   const type = file.type.toLowerCase();
-  if (HEIC_EXTENSIONS.has(extension) || type === "image/heic" || type === "image/heif") {
+  if (HEIC_EXTENSIONS.has(extension) || HEIC_TYPES.has(type)) {
     return "heic";
   }
   if (IMAGE_EXTENSIONS.has(extension) || ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(type)) {
@@ -51,19 +50,13 @@ export function mediaKind(file: File): MediaKind | "heic" | "skip" {
 export function partitionFiles(files: File[]): Partition {
   const supported: File[] = [];
   let skipped = 0;
-  let heic = 0;
   for (const file of files) {
     if (file.name.startsWith(".")) continue;
     const kind = mediaKind(file);
-    if (kind === "photo" || kind === "video") supported.push(file);
-    else if (kind === "heic") {
-      heic += 1;
-      skipped += 1;
-    } else if (file.size > 0 || extensionOf(file.name)) {
-      skipped += 1;
-    }
+    if (kind === "photo" || kind === "video" || kind === "heic") supported.push(file);
+    else if (file.size > 0 || extensionOf(file.name)) skipped += 1;
   }
-  return { supported, skipped, heic };
+  return { supported, skipped };
 }
 
 export async function prepareQueueItem(file: File): Promise<QueueItem> {
@@ -78,6 +71,16 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
       classifyBlob: frame,
     };
   }
+  if (kind === "heic") {
+    const still = await heicFileToJpeg(file);
+    return {
+      id: crypto.randomUUID(),
+      name: file.name,
+      kind: "photo",
+      thumbUrl: URL.createObjectURL(still),
+      classifyBlob: still,
+    };
+  }
   if (kind !== "photo") {
     throw new Error("Unsupported file.");
   }
@@ -89,6 +92,17 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
     thumbUrl: URL.createObjectURL(still),
     classifyBlob: still,
   };
+}
+
+async function heicFileToJpeg(file: File): Promise<Blob> {
+  const decoded = await decodeHeicBitmap(new Uint8Array(await file.arrayBuffer()));
+  const pixels = new Uint8ClampedArray(decoded.rgba);
+  const bitmap = await createImageBitmap(new ImageData(pixels, decoded.width, decoded.height));
+  try {
+    return await canvasJpeg(bitmap, bitmap.width, bitmap.height);
+  } finally {
+    bitmap.close();
+  }
 }
 
 async function downscalePhoto(file: File): Promise<Blob> {
@@ -182,52 +196,6 @@ export function captureVideoFrame(file: File): Promise<Blob> {
     );
     video.src = url;
   });
-}
-
-type DirectoryHandle = {
-  name: string;
-  values: () => AsyncIterable<FileSystemHandle>;
-};
-
-type DirectoryPickerWindow = Window & {
-  showDirectoryPicker?: (options?: { mode?: "read" | "readwrite" }) => Promise<DirectoryHandle>;
-};
-
-export function supportsDirectoryPicker(): boolean {
-  return typeof (window as DirectoryPickerWindow).showDirectoryPicker === "function";
-}
-
-export async function pickDirectory(): Promise<FolderRead | null> {
-  const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
-  if (!picker) return null;
-  try {
-    const handle = (await picker({ mode: "read" })) as unknown as DirectoryHandle;
-    const files = await collectHandleFiles(handle);
-    return { folderName: handle.name || "Folder", files };
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return null;
-    if (
-      error instanceof DOMException &&
-      (error.name === "NotAllowedError" || error.name === "SecurityError")
-    ) {
-      throw new FolderPermissionError();
-    }
-    throw error;
-  }
-}
-
-async function collectHandleFiles(directory: DirectoryHandle): Promise<File[]> {
-  const files: File[] = [];
-  for await (const entry of directory.values()) {
-    if (entry.kind === "file") {
-      const file = await (entry as FileSystemFileHandle).getFile();
-      if (!file.name.startsWith(".")) files.push(file);
-    } else if (entry.kind === "directory") {
-      const nested = await collectHandleFiles(entry as unknown as DirectoryHandle);
-      files.push(...nested);
-    }
-  }
-  return files;
 }
 
 export async function filesFromList(list: FileList | File[]): Promise<FolderRead> {
