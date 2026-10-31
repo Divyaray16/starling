@@ -32,6 +32,25 @@ type Flight = {
   to: Point;
 };
 
+const MEDIA_ACCEPT = [
+  "image/*",
+  "video/*",
+  ".heic",
+  ".heif",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".mp4",
+  ".webm",
+  ".mov",
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+].join(",");
+
 const EMPTY_COPY = {
   phase: "empty" as Phase,
   folderName: null as string | null,
@@ -113,7 +132,7 @@ export function SorterApp() {
       setState({
         ...EMPTY_COPY,
         error:
-          "That folder doesn’t have any JPEG, PNG, WebP, GIF, HEIC, HEIF, MP4, WebM, or MOV files.",
+          "Those files don’t include a JPEG, PNG, WebP, GIF, HEIC, HEIF, MP4, WebM, or MOV.",
         skipped: partition.skipped,
       });
       return;
@@ -345,11 +364,18 @@ export function SorterApp() {
     }
   }
 
-  async function onInput(event: React.ChangeEvent<HTMLInputElement>) {
-    const list = event.target.files;
+  async function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!list || list.length === 0) return;
-    const folder = await filesFromList(list);
+    if (files.length === 0) return;
+    await begin("Selected files", files);
+  }
+
+  async function onDirectory(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    const folder = await filesFromList(files);
     await begin(folder.folderName, folder.files);
   }
 
@@ -361,7 +387,7 @@ export function SorterApp() {
       if (folder.files.length === 0) {
         setState((current) => ({
           ...current,
-          error: "Nothing in that drop could be read as a folder of photos or videos.",
+          error: "Nothing in that drop could be read as photos or videos.",
         }));
         return;
       }
@@ -369,7 +395,7 @@ export function SorterApp() {
     } catch {
       setState((current) => ({
         ...current,
-        error: "That drop couldn’t be read. Try the folder button instead.",
+        error: "That drop couldn’t be read. Use the file control instead.",
       }));
     }
   }
@@ -424,34 +450,49 @@ export function SorterApp() {
             </div>
           ) : null}
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <label
-              className={cn(
-                buttonVariants({ size: "lg" }),
-                "relative h-10 cursor-pointer px-3.5",
-              )}
-            >
-              <FolderOpen data-icon="inline-start" />
-              {state.phase === "empty" ? "Choose a folder" : "Choose another folder"}
-              <input
-                type="file"
-                multiple
-                className="absolute inset-0 z-10 cursor-pointer opacity-0"
-                aria-label="Choose a folder of photos and videos"
-                {...{ webkitdirectory: "", directory: "" }}
-                onChange={onInput}
-              />
-            </label>
-            <Button
-              type="button"
-              size="lg"
-              variant="outline"
-              className="h-10 bg-transparent px-3.5"
-              onClick={onSample}
-            >
-              <Images data-icon="inline-start" />
-              Try a sample folder
-            </Button>
+          <div className="mt-5 max-w-lg">
+            <p className="text-sm text-[#5c5148]">
+              {state.phase === "empty" ? "Choose photos and videos" : "Choose more photos and videos"}
+            </p>
+            <input
+              id="photo-file-input"
+              type="file"
+              name="photos"
+              multiple
+              accept={MEDIA_ACCEPT}
+              aria-label="Choose photos and videos"
+              className="mt-2 block w-full cursor-pointer text-sm text-[#241c17] file:mr-3 file:h-10 file:cursor-pointer file:border-0 file:bg-[#1c1612] file:px-3.5 file:text-sm file:font-medium file:text-[#f3e6d8]"
+              onChange={onFiles}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <label
+                className={cn(
+                  buttonVariants({ size: "lg", variant: "outline" }),
+                  "relative h-10 cursor-pointer overflow-hidden bg-transparent px-3.5",
+                )}
+              >
+                <FolderOpen data-icon="inline-start" />
+                Choose a folder
+                <input
+                  id="folder-file-input"
+                  type="file"
+                  className="sr-only"
+                  aria-label="Choose a folder of photos and videos"
+                  {...{ webkitdirectory: "", directory: "" }}
+                  onChange={onDirectory}
+                />
+              </label>
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                className="h-10 bg-transparent px-3.5"
+                onClick={onSample}
+              >
+                <Images data-icon="inline-start" />
+                Try a sample folder
+              </Button>
+            </div>
           </div>
 
           {showProgress ? (

@@ -51,7 +51,7 @@ export function PileStage({
               <span className="block h-14 w-12 rotate-6 border border-[#c46b45]/30 bg-[#2a211c]" />
             </div>
             <p className="text-sm leading-relaxed text-[#e6d5c6]">
-              Drop a folder here. Photos and videos wait on this table until each one is labeled.
+              Drop photos and videos here. They wait on this table until each one is labeled.
             </p>
           </div>
         </div>
