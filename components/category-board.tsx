@@ -1,0 +1,151 @@
+"use client";
+
+import { MediaTile } from "@/components/media-tile";
+import { Button } from "@/components/ui/button";
+import type { CategoryRow } from "@/lib/types";
+import { X } from "lucide-react";
+import { useEffect } from "react";
+
+function countLabel(count: number) {
+  if (count === 0) return "Landing";
+  return `${count} ${count === 1 ? "file" : "files"}`;
+}
+
+export function CategoryBoard({
+  categories,
+  sorting,
+  settled,
+  finishedEmpty = false,
+  openCategoryId,
+  onOpen,
+  onClose,
+}: {
+  categories: CategoryRow[];
+  sorting: boolean;
+  settled: boolean;
+  finishedEmpty?: boolean;
+  openCategoryId: string | null;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+}) {
+  const open = categories.find((category) => category.id === openCategoryId) ?? null;
+
+  if (open && settled) {
+    return <CategoryGrid category={open} onClose={onClose} />;
+  }
+
+  if (categories.length === 0) {
+    return (
+      <div className="px-6 py-8 sm:px-10 sm:py-10">
+        <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#161616]">
+          {finishedEmpty ? "Nothing landed" : "Nothing is sorted yet"}
+        </h2>
+        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#4e4742]">
+          {finishedEmpty
+            ? "Those files couldn’t be read, so the flock had nowhere to go."
+            : "Choose photos and videos, or try the sample set. Starling reads each file in this browser and keeps it on this machine. A category appears only when a file lands in it."}
+        </p>
+        {sorting ? (
+          <p className="mt-6 text-sm text-[#6a615b]">The flock is still together.</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-6 pb-12 sm:px-10">
+      <ul className="divide-y divide-[#eadfd6]">
+        {categories.map((category) => (
+          <li key={category.id} className="category-enter py-4" data-category={category.id}>
+            <div className="flex items-baseline justify-between gap-4">
+              {settled ? (
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-baseline justify-between gap-4 text-left"
+                  onClick={() => onOpen(category.id)}
+                  aria-label={`Open ${category.name}`}
+                >
+                  <h3 className="truncate text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#161616]">
+                    {category.name}
+                  </h3>
+                  <span className="shrink-0 text-sm text-[#5e564f]">
+                    <CountTick count={category.items.length} />
+                    <span className="ml-3 text-[#161616] underline decoration-[#e7b7c6] underline-offset-4">
+                      Open
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <>
+                  <h3 className="text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#161616]">
+                    {category.name}
+                  </h3>
+                  <p className="text-sm text-[#5e564f]">
+                    <CountTick count={category.items.length} />
+                  </p>
+                </>
+              )}
+            </div>
+            <div
+              data-dock={category.id}
+              data-count={category.items.length}
+              className="mt-3 flex min-h-[92px] gap-2 overflow-x-auto pb-1"
+              onClick={settled ? () => onOpen(category.id) : undefined}
+            >
+              {category.items.map((item) => (
+                <div key={item.id} data-landed={item.id} className="w-[76px] shrink-0">
+                  <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
+                </div>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CountTick({ count }: { count: number }) {
+  return (
+    <span key={count} className="count-tick inline-block tabular-nums">
+      {countLabel(count)}
+    </span>
+  );
+}
+
+function CategoryGrid({
+  category,
+  onClose,
+}: {
+  category: CategoryRow;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="px-6 py-6 sm:px-10" role="region" aria-label={`${category.name} photos`}>
+      <Button type="button" variant="outline" className="h-10 bg-transparent px-3" onClick={onClose}>
+        <X data-icon="inline-start" />
+        Close
+      </Button>
+      <h2 className="mt-5 text-[2.2rem] leading-none font-semibold tracking-[-0.04em] text-[#161616]">
+        {category.name}
+      </h2>
+      <p className="mt-2 text-sm text-[#5e564f]">{countLabel(category.items.length)}</p>
+      <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+        {category.items.map((item) => (
+          <li key={item.id} className="min-w-0">
+            <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
+            <p className="mt-2 truncate text-sm text-[#161616]">{item.name}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

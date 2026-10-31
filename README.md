@@ -1,8 +1,18 @@
-# Divya
+# Starling
 
-Divya sorts a folder of photos and videos in the browser. You pick a real folder, each file is labeled on this machine, and a category row appears only after at least one file lands in it. Counts are the files that actually landed. Nothing is uploaded.
+Starling sorts a folder of photos and videos in the browser. The pile lifts together and lands in place. You choose files, each one is labeled on this machine, and a category row appears only after at least one file belongs there. Counts are the files that actually landed. Nothing is uploaded.
 
-The pile of unsorted tiles sits on a dark table. One tile at a time lifts off, crosses to the paper side, and docks in its row.
+When the flock has settled, open a category to see its photos and videos, or download a zip of folders: one folder per category, with the original file bytes inside.
+
+## The flock
+
+Thumbnails gather as one cloud on the motion side as soon as they can be shown. Starling labels them in the background with the on-device model. It does not send a tile across as each label returns. A small set waits until every file is labeled, then lifts in one wave. A large folder releases waves of about 36 once 40 are ready, and the remainder leaves together. Departures are staggered by a few dozen milliseconds, so many tiles are in the air at once. They dock into category rows, and the counts tick up as they land. Rows can fill in parallel. A category is shown only when at least one file belongs there.
+
+If the browser asks for reduced motion, Starling skips the flight and shows the settled board.
+
+## After the sort
+
+The page says the sort is finished. Each category opens into a grid of thumbnails, file names, and a photo or video badge. Close returns to the board. **Download folders** builds a zip in the browser with [fflate](https://github.com/101arrowz/fflate). HEIC and HEIF files are the original files, not the JPEG preview used for the thumbnail. **Sort another set** clears the board.
 
 ## Run
 
@@ -20,15 +30,15 @@ npm start
 
 ## What stays in the browser
 
-Choose photos and videos with the file control. It is a normal multi-file input (`image/*`, `video/*`, plus `.heic` and `.heif`). You can also drop files onto the pile. A separate folder control is there for browsers that allow a directory picker; it does not sit on top of the file control. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
+Choose photos and videos with **Choose files**. It is a normal multi-file input (`image/*`, `video/*`, plus `.heic` and `.heif`). You can also drop files onto the pile. A separate folder control is there for browsers that allow a directory picker; it does not sit on top of the file control. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
 
-Photos (JPEG, PNG, WebP, GIF, HEIC, HEIF) and videos (MP4, WebM, MOV) can share a category. HEIC and HEIF are decoded in this browser with [libheif](https://github.com/strukturag/libheif) (the `libheif-js` wasm build) to a bitmap, drawn to a canvas, and then labeled the same way as a JPEG, including the flight animation. A video is labeled from one frame drawn to a canvas. Each tile is badged Photo or Video. A file that cannot be decoded is named on its own; the rest of the folder still sorts. Other files that are not photos or videos are skipped, and the page says how many.
+Photos (JPEG, PNG, WebP, GIF, HEIC, HEIF) and videos (MP4, WebM, MOV) can share a category. HEIC and HEIF are decoded in this browser with [libheif](https://github.com/strukturag/libheif) (the `libheif-js` wasm build) to a bitmap, drawn to a canvas, and then labeled the same way as a JPEG. The zip still contains the original HEIC. A video is labeled from one frame drawn to a canvas. Each tile is badged Photo or Video. A file that cannot be decoded is named on its own; the rest of the folder still sorts. Other files that are not photos or videos are skipped, and the page says how many.
 
 ## Categories are provisional
 
 Category names are not a fixed set in the layout. They live in [`lib/vocabulary.ts`](lib/vocabulary.ts). That list is a provisional vocabulary for zero-shot labeling: a row is shown only when the model assigns at least one file to it, so a different folder can introduce a category that was not on screen before. Edit the names and prompts in that module when the wording should change.
 
-If the CLIP weights cannot be downloaded, Divya switches to a smaller on-device reader in [`lib/fallback-classifier.ts`](lib/fallback-classifier.ts). That reader measures the image (edges, skin-tone pixels, sky, saturation) and scores the same vocabulary. The page says so. Those labels are rougher, and they are not CLIP labels.
+If the CLIP weights cannot be downloaded, Starling switches to a smaller on-device reader in [`lib/fallback-classifier.ts`](lib/fallback-classifier.ts). That reader measures the image (edges, skin-tone pixels, sky, saturation) and scores the same vocabulary. The page says so. Those labels are rougher, and they are not CLIP labels.
 
 ## Sample folder
 
@@ -42,11 +52,11 @@ If the CLIP weights cannot be downloaded, Divya switches to a smaller on-device 
 - Tokyo Shibuya Scramble Crossing, 2018
 - Screenshot of the eLabFTW user interface
 
-The clip is a one-second view of the Shibuya photograph so the video path can be tried without a personal folder. Sample files go through the same classifier and the same animation as a folder you pick.
+The clip is a one-second view of the Shibuya photograph so the video path can be tried without a personal folder. Sample files go through the same classifier and the same flock, and they end on the settled board.
 
 ## Limits
 
 - HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
-- The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload.
-- Very large folders stay responsive by labeling one file at a time and drawing only a sample of the resting pile.
+- The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload. The empty page paints before that download starts.
+- A very large folder shows a dense sample of the cloud (72 tiles) plus the real count, and the flock leaves in waves rather than one file at a time.
 - The file control opens the system file dialog for photos and videos, including HEIC and HEIF. You can also drop files on the pile. The folder control is separate and only helps when the browser allows choosing a directory.

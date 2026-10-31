@@ -50,38 +50,38 @@
 }
 
 :root {
-  --background: #f3eee4;
-  --foreground: #241c17;
-  --card: #f7f3eb;
-  --card-foreground: #241c17;
-  --popover: #f7f3eb;
-  --popover-foreground: #241c17;
-  --primary: #c46b45;
-  --primary-foreground: #fff8f4;
-  --secondary: #efe6d8;
-  --secondary-foreground: #241c17;
-  --muted: #efe6d8;
-  --muted-foreground: #6e6258;
-  --accent: #f6efe6;
-  --accent-foreground: #241c17;
-  --destructive: #9a3d32;
-  --border: #e0d3c3;
-  --input: #e0d3c3;
-  --ring: #c46b45;
-  --chart-1: #c46b45;
-  --chart-2: #8c5a45;
-  --chart-3: #d7c4b4;
-  --chart-4: #6e6258;
-  --chart-5: #241c17;
-  --radius: 0.4rem;
-  --sidebar: #f3eee4;
-  --sidebar-foreground: #241c17;
-  --sidebar-primary: #c46b45;
-  --sidebar-primary-foreground: #fff8f4;
-  --sidebar-accent: #efe6d8;
-  --sidebar-accent-foreground: #241c17;
-  --sidebar-border: #e0d3c3;
-  --sidebar-ring: #c46b45;
+  --background: #f7f1ec;
+  --foreground: #161616;
+  --card: #fffaf8;
+  --card-foreground: #161616;
+  --popover: #fffaf8;
+  --popover-foreground: #161616;
+  --primary: #171717;
+  --primary-foreground: #fffaf8;
+  --secondary: #f3e7e4;
+  --secondary-foreground: #161616;
+  --muted: #f3eae6;
+  --muted-foreground: #6a615b;
+  --accent: #ffe4ea;
+  --accent-foreground: #161616;
+  --destructive: #9d2348;
+  --border: #eadfd6;
+  --input: #eadfd6;
+  --ring: #171717;
+  --chart-1: #d43370;
+  --chart-2: #f3b7c6;
+  --chart-3: #f7f1ec;
+  --chart-4: #6a615b;
+  --chart-5: #171717;
+  --radius: 0.7rem;
+  --sidebar: #f7f1ec;
+  --sidebar-foreground: #161616;
+  --sidebar-primary: #171717;
+  --sidebar-primary-foreground: #fffaf8;
+  --sidebar-accent: #ffe4ea;
+  --sidebar-accent-foreground: #161616;
+  --sidebar-border: #eadfd6;
+  --sidebar-ring: #171717;
 }
 
 @layer base {
@@ -89,44 +89,110 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background:
+      radial-gradient(1100px 680px at 0% 0%, rgba(255, 196, 208, 0.55), transparent 58%),
+      radial-gradient(900px 640px at 100% 100%, rgba(255, 214, 206, 0.45), transparent 52%),
+      #f7f1ec;
+    color: #161616;
   }
   html {
     @apply font-sans;
   }
+  ::selection {
+    background: #ffd0dc;
+    color: #161616;
+  }
 }
 
-.ink-stage {
+.flock-stage {
   background:
-    radial-gradient(820px 480px at 18% 0%, rgba(196, 107, 69, 0.22), transparent 58%),
-    radial-gradient(900px 640px at 80% 100%, #3a2c24 0%, #1a1411 46%, #100d0b 100%);
-  color: #f6efe6;
+    radial-gradient(560px 460px at 48% 46%, rgba(255, 170, 186, 0.78), transparent 68%),
+    radial-gradient(420px 280px at 8% 92%, rgba(255, 214, 206, 0.7), transparent 70%),
+    linear-gradient(180deg, #fffaf8 0%, #fdecef 100%);
+  color: #161616;
 }
 
-.paper-ledger {
+.flock-stage-hot {
+  box-shadow: inset 0 0 0 2px #e7a0b4;
+}
+
+.paper-board {
   background:
-    linear-gradient(180deg, rgba(255, 252, 247, 0.7), transparent 220px),
-    #f3eee4;
-  color: #241c17;
+    linear-gradient(180deg, rgba(255, 252, 250, 0.72), transparent 220px),
+    #f6f1eb;
+  color: #161616;
+}
+
+.accent-word {
+  font-family: var(--font-serif), Georgia, serif;
+  font-style: italic;
+  font-weight: 450;
+  font-size: 1.12em;
+  color: #d43370;
+  letter-spacing: -0.03em;
+}
+
+.flock-tile {
+  animation:
+    flock-in 480ms cubic-bezier(0.16, 0.84, 0.28, 1) both,
+    flock-drift var(--drift-duration, 4.5s) ease-in-out var(--drift-delay, 0s) infinite;
 }
 
 .category-enter {
-  animation: category-enter 480ms cubic-bezier(0.16, 0.84, 0.28, 1);
+  animation: category-enter 420ms cubic-bezier(0.16, 0.84, 0.28, 1);
+}
+
+.count-tick {
+  animation: count-tick 280ms cubic-bezier(0.16, 0.84, 0.28, 1);
+}
+
+@keyframes flock-in {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes flock-drift {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: var(--drift-x) var(--drift-y);
+  }
 }
 
 @keyframes category-enter {
   from {
     opacity: 0;
-    transform: translateX(40px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes count-tick {
+  from {
+    opacity: 0.35;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .category-enter {
+  .flock-tile,
+  .category-enter,
+  .count-tick {
     animation: none;
   }
 }

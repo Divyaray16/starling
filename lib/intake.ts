@@ -69,6 +69,7 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
       kind: "video",
       thumbUrl: URL.createObjectURL(frame),
       classifyBlob: frame,
+      file,
     };
   }
   if (kind === "heic") {
@@ -79,6 +80,7 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
       kind: "photo",
       thumbUrl: URL.createObjectURL(still),
       classifyBlob: still,
+      file,
     };
   }
   if (kind !== "photo") {
@@ -91,6 +93,7 @@ export async function prepareQueueItem(file: File): Promise<QueueItem> {
     kind: "photo",
     thumbUrl: URL.createObjectURL(still),
     classifyBlob: still,
+    file,
   };
 }
 

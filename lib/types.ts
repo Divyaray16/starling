@@ -6,6 +6,8 @@ export type QueueItem = {
   kind: MediaKind;
   thumbUrl: string;
   classifyBlob: Blob;
+  /** Original file. HEIC stays HEIC here; thumbUrl may be a JPEG preview. */
+  file: File;
 };
 
 export type LandedTile = {
@@ -13,6 +15,7 @@ export type LandedTile = {
   name: string;
   kind: MediaKind;
   thumbUrl: string;
+  file: File;
 };
 
 export type CategoryRow = {

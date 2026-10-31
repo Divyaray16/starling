@@ -1,7 +1,7 @@
 /**
  * Small local sample set so the sorter can be tried before a personal folder
  * is chosen. The files live in /public/samples and are fetched like any other
- * folder: each one still goes through the same classifier and the same flight
+ * folder: each one still goes through the same classifier and the same flock
  * animation. Names here are display names, not labels.
  */
 const SAMPLE_FILES: { file: string; name: string; type: string }[] = [

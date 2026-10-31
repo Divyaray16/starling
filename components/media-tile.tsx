@@ -18,25 +18,22 @@ export function MediaTile({
   return (
     <figure
       className={cn(
-        "relative overflow-hidden",
-        framed && "bg-[#f4efe6] p-1 pb-3 shadow-[0_10px_24px_rgba(0,0,0,0.28)]",
+        "relative",
+        framed && "bg-white p-1 shadow-[0_16px_34px_rgba(90,40,55,0.14)]",
         className,
       )}
     >
-      {/* Blob and object URLs are local files; next/image cannot optimize them. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={name} className="aspect-[4/5] h-full w-full object-cover" />
-      <Badge
-        variant="secondary"
-        className={cn(
-          "absolute bottom-1.5 left-1.5 h-4 border-0 px-1.5 text-[10px] tracking-wide uppercase",
-          kind === "video"
-            ? "bg-[#c46b45] text-[#fff7f2]"
-            : "bg-[#1c1612]/80 text-[#f6efe6]",
-        )}
-      >
-        {kind === "video" ? "Video" : "Photo"}
-      </Badge>
+      <div className="relative">
+        {/* Blob and object URLs are local files; next/image cannot optimize them. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={name} className="aspect-[4/5] h-full w-full object-cover" />
+        <Badge
+          variant="secondary"
+          className="absolute bottom-1.5 left-1.5 h-4 border-0 bg-[#171717]/88 px-1.5 text-[10px] tracking-wide text-white uppercase"
+        >
+          {kind === "video" ? "Video" : "Photo"}
+        </Badge>
+      </div>
     </figure>
   );
 }

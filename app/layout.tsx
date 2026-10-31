@@ -10,6 +10,7 @@ const sans = Geist({
 const serif = Fraunces({
   variable: "--font-serif",
   subsets: ["latin"],
+  style: ["italic"],
 });
 
 const mono = Geist_Mono({
@@ -18,9 +19,9 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Divya",
+  title: "Starling",
   description:
-    "Sort a folder of photos and videos in the browser. Categories come from the pictures, and the files stay on this machine.",
+    "Sort a folder of photos and videos in the browser. The pile lifts together and lands in place. Files stay on this machine.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
