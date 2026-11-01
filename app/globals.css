@@ -164,6 +164,22 @@
   overflow: hidden;
 }
 
+/* Directory picker for the same button. Off-screen and out of the tab order.
+   Right-click calls click() on it. display:none would block that dialog. */
+.picker-folder-input {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .media-picker-input {
   position: absolute;
   inset: 0;

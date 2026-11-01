@@ -149,18 +149,14 @@ type TileDrag = ReturnType<typeof useTileDrag>;
 
 export function CategoryBoard({
   categories,
-  sorting,
   settled,
-  finishedEmpty = false,
   openCategoryId,
   onOpen,
   onClose,
   onMove,
 }: {
   categories: CategoryRow[];
-  sorting: boolean;
   settled: boolean;
-  finishedEmpty?: boolean;
   openCategoryId: string | null;
   onOpen: (id: string) => void;
   onClose: () => void;
@@ -178,7 +174,7 @@ export function CategoryBoard({
 
   const open = categories.find((category) => category.id === openCategoryId) ?? null;
 
-  let body: ReactNode;
+  let body: ReactNode = null;
   if (open && settled) {
     body = (
       <CategoryGrid
@@ -189,25 +185,7 @@ export function CategoryBoard({
         onClose={onClose}
       />
     );
-  } else if (categories.length === 0) {
-    body = (
-      <LandingSurface>
-        <div className="px-5 py-8 sm:px-7 sm:py-10">
-          <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#3c443e]">
-            {finishedEmpty ? "Nothing landed" : "Nothing is sorted yet"}
-          </h2>
-          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#5a645c]">
-            {finishedEmpty
-              ? "Those files couldn’t be read, so the flock had nowhere to go."
-              : "Choose photos and videos, or try the sample set. Starling reads each file in this browser and keeps it on this machine. A category appears only when a file lands in it."}
-          </p>
-          {sorting ? (
-            <p className="mt-6 text-sm text-[#6b756c]">The flock is still together.</p>
-          ) : null}
-        </div>
-      </LandingSurface>
-    );
-  } else {
+  } else if (categories.length > 0) {
     body = (
       <LandingSurface>
         <ul className="divide-y divide-[#c5d2c8]">

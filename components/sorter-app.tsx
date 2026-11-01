@@ -32,7 +32,7 @@ import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { Check, Download, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
+import { Check, Download, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
@@ -347,6 +347,11 @@ export function SorterApp() {
   const sessionLive = useRef(false);
   const pipelineRunning = useRef(false);
   const pipelineToken = useRef(0);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const setFolderInput = useCallback((node: HTMLInputElement | null) => {
+    folderInputRef.current = node;
+    markDirectoryInput(node);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -902,7 +907,7 @@ export function SorterApp() {
     acceptFiles(folder.folderName, folder.files);
   }
 
-  async function onDrop(event: React.DragEvent<HTMLDivElement>) {
+  async function onDrop(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
     setDragOver(false);
     try {
@@ -1095,54 +1100,37 @@ export function SorterApp() {
           ) : null}
 
           <div className={cn("max-w-lg", settled || finishedEmpty ? "mt-6" : "mt-7")}>
-            <label
-              className={cn(
-                buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                "media-picker h-11 cursor-pointer rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-                settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
-              )}
-            >
-              <span className="pointer-events-none inline-flex items-center gap-1.5">
-                <ImageIcon data-icon="inline-start" className="size-4" />
-                <span>
-                  Choose files
-                  <span className="font-normal opacity-75"> · images and videos</span>
-                </span>
-              </span>
-              <input
-                id="photo-file-input"
-                type="file"
-                name="photos"
-                multiple
-                accept={MEDIA_ACCEPT}
-                aria-label="Choose files — images and videos"
-                title="Choose images and videos"
-                className="media-picker-input"
-                onChange={onFiles}
-              />
-            </label>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <label
                 className={cn(
-                  buttonVariants({ size: "lg", variant: "outline" }),
-                  "media-picker h-10 cursor-pointer rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                  buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
+                  "media-picker h-11 cursor-pointer rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                  settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
                 )}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  folderInputRef.current?.click();
+                }}
+                onDragOverCapture={(event) => {
+                  event.preventDefault();
+                  setDragOver(true);
+                }}
+                onDropCapture={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void onDrop(event);
+                }}
               >
-                <span className="pointer-events-none inline-flex items-center gap-1.5">
-                  <FolderOpen data-icon="inline-start" className="size-4" />
-                  Choose a folder
-                </span>
+                <span className="pointer-events-none">Choose files or folder</span>
                 <input
-                  id="folder-file-input"
-                  ref={markDirectoryInput}
+                  id="photo-file-input"
                   type="file"
-                  name="folder"
+                  name="photos"
                   multiple
-                  aria-label="Choose a folder of photos and videos"
-                  title="Choose a folder"
+                  accept={MEDIA_ACCEPT}
+                  aria-label="Choose files or folder"
                   className="media-picker-input"
-                  onChange={onDirectory}
-                  {...{ webkitdirectory: "", directory: "" }}
+                  onChange={onFiles}
                 />
               </label>
               {settled || finishedEmpty ? (
@@ -1165,6 +1153,20 @@ export function SorterApp() {
                 Try a sample folder
               </button>
             </div>
+            {/* Chrome cannot return loose files and a directory from one dialog.
+                This input stays unlabeled; right-click on the button opens it. */}
+            <input
+              id="folder-file-input"
+              ref={setFolderInput}
+              type="file"
+              name="folder"
+              multiple
+              tabIndex={-1}
+              aria-hidden="true"
+              className="picker-folder-input"
+              onChange={onDirectory}
+              {...{ webkitdirectory: "", directory: "" }}
+            />
           </div>
 
           {sorting && statusLine ? (
@@ -1194,9 +1196,7 @@ export function SorterApp() {
         <div className="min-h-0 flex-1 overflow-y-auto" data-board-scroll>
           <CategoryBoard
             categories={state.categories}
-            sorting={sorting}
             settled={settled}
-            finishedEmpty={finishedEmpty}
             openCategoryId={openCategoryId}
             onOpen={setOpenCategoryId}
             onClose={closeCategory}
