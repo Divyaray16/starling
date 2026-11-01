@@ -935,7 +935,7 @@ export function SorterApp() {
                 {state.categories.length === 1 ? "category" : "categories"}. Open one, or take the
                 folders with you.
               </p>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4">
                 <Button
                   type="button"
                   size="lg"
@@ -946,16 +946,6 @@ export function SorterApp() {
                   <Download data-icon="inline-start" className="size-4" />
                   {zipping ? "Packing folders…" : "Download folders"}
                 </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="h-11 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
-                  onClick={resetBoard}
-                >
-                  <RefreshCw data-icon="inline-start" className="size-4" />
-                  Sort another set
-                </Button>
               </div>
             </div>
           ) : null}
@@ -965,18 +955,6 @@ export function SorterApp() {
               <h2 className="text-[2.15rem] leading-none font-semibold tracking-[-0.04em]">
                 Nothing landed.
               </h2>
-              <div className="mt-4">
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="h-11 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
-                  onClick={resetBoard}
-                >
-                  <RefreshCw data-icon="inline-start" className="size-4" />
-                  Sort another set
-                </Button>
-              </div>
             </div>
           ) : null}
 
@@ -1031,6 +1009,18 @@ export function SorterApp() {
                   {...{ webkitdirectory: "", directory: "" }}
                 />
               </label>
+              {settled || finishedEmpty ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="h-10 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e]"
+                  onClick={resetBoard}
+                >
+                  <RefreshCw data-icon="inline-start" className="size-4" />
+                  Sort another set
+                </Button>
+              ) : null}
               <button
                 type="button"
                 onClick={onSample}

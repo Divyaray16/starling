@@ -22,15 +22,7 @@ export function FlockStage({
   const eyebrow = landed ? "Settled" : lifting ? "In the air" : "Unsorted";
   const title = landed ? "Landed" : lifting ? "Lifting" : "The pile";
   const count =
-    items.length === 0
-      ? landed
-        ? "Clear"
-        : lifting
-          ? "In the air"
-          : "Empty"
-      : items.length === 1
-        ? "1 together"
-        : `${items.length} together`;
+    items.length === 0 ? null : items.length === 1 ? "1 together" : `${items.length} together`;
 
   return (
     <section
@@ -50,7 +42,7 @@ export function FlockStage({
             {title}
           </h2>
         </div>
-        <p className="text-sm text-[#5f6a62] tabular-nums">{count}</p>
+        {count ? <p className="text-sm text-[#5f6a62] tabular-nums">{count}</p> : null}
       </header>
 
       {visible.length === 0 ? (
