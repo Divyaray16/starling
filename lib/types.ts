@@ -26,6 +26,11 @@ export type CategoryRow = {
   id: string;
   name: string;
   items: LandedTile[];
+  /**
+   * Dock order, including tiles still in the air. Placeholders hold these
+   * slots so a landing does not shove the row after the flock has aimed.
+   */
+  slots: string[];
 };
 
 export type Point = {

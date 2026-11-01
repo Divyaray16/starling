@@ -6,11 +6,12 @@ import type { MediaKind, Point } from "@/lib/types";
 import { useEffect, useRef } from "react";
 
 /**
- * Custom cubic-bezier(0.22, 0.82, 0.18, 1): a quick lift off the pile and a
- * soft settle into the row. Not a linear slide.
+ * One quadratic arc from the pile to the dock. Time eases along that curve;
+ * the curve itself does not kink or hook past the landing point. Motion is
+ * translate3d / rotate / scale only, so the flight stays on the compositor.
  */
 const EASE_X1 = 0.22;
-const EASE_Y1 = 0.82;
+const EASE_Y1 = 0.68;
 const EASE_X2 = 0.18;
 const EASE_Y2 = 1;
 
@@ -42,6 +43,43 @@ function quad(a: number, b: number, c: number, t: number) {
   return u * u * a + 2 * u * t * b + t * t * c;
 }
 
+/** Zero slope at both ends, so the lean eases instead of kicking. */
+function smoothstep(t: number) {
+  return t * t * (3 - 2 * t);
+}
+
+function bell(t: number) {
+  const s = Math.sin(Math.PI * t);
+  return s * s;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Matches MediaTile: 4px padding and a 4:5 picture. */
+function tileHeight(width: number) {
+  return (width - 8) * 1.25 + 8;
+}
+
+/**
+ * A gentle bow above the straight line. The control point stays inside the
+ * span of the trip, so the path cannot hook back past the dock.
+ */
+function arcControl(from: Point, to: Point, weave: number): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  const arc = Math.min(72, 44 + dist * 0.035);
+  const side = clamp(weave, -8, 8);
+  const minX = Math.min(from.x, to.x);
+  const maxX = Math.max(from.x, to.x);
+  return {
+    x: clamp((from.x + to.x) / 2 + side, minX - 8, maxX + 8),
+    y: (from.y + to.y) / 2 - arc,
+  };
+}
+
 export function FlightTile({
   src,
   name,
@@ -51,8 +89,9 @@ export function FlightTile({
   delay,
   tilt,
   size,
-  lift,
   weave,
+  dockScale,
+  layer,
   duration = FLOCK_FLIGHT_MS,
   onDone,
 }: {
@@ -64,13 +103,15 @@ export function FlightTile({
   delay: number;
   tilt: number;
   size: number;
-  lift: number;
   weave: number;
+  dockScale: number;
+  layer: number;
   duration?: number;
   onDone: () => void;
 }) {
   const tileRef = useRef<HTMLDivElement>(null);
   const doneRef = useRef(onDone);
+  const height = tileHeight(size);
 
   useEffect(() => {
     doneRef.current = onDone;
@@ -82,18 +123,19 @@ export function FlightTile({
     let frame = 0;
     let finished = false;
     const start = performance.now();
-    const control = {
-      x: (from.x + to.x) / 2 + weave,
-      y: Math.min(from.y, to.y) - lift,
-    };
+    const control = arcControl(from, to, weave);
+    const halfW = size / 2;
+    const halfH = height / 2;
+    const direction = to.x >= from.x ? 1 : -1;
+    const lean = direction * (3.5 + Math.min(1.5, Math.abs(weave) * 0.2));
 
     const place = (x: number, y: number, rotation: number, scale: number) => {
-      element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`;
+      element.style.transform = `translate3d(${x - halfW}px, ${y - halfH}px, 0) rotate(${rotation}deg) scale(${scale})`;
     };
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      place(to.x, to.y, 0, 0.92);
+      place(to.x, to.y, 0, dockScale);
       doneRef.current();
       return;
     }
@@ -109,35 +151,36 @@ export function FlightTile({
       const eased = flightEase(t);
       const x = quad(from.x, control.x, to.x, eased);
       const y = quad(from.y, control.y, to.y, eased);
-      const along = Math.sin(eased * Math.PI);
-      const rotation = tilt * (1 - eased) + along * (weave >= 0 ? 8 : -8);
-      // A small breath in the air, then a slight scale settle as it docks.
-      const scale = 1 - eased * 0.08 + along * 0.055;
+      const rotation = tilt * (1 - smoothstep(eased)) + lean * bell(eased);
+      const scale = 1 + (dockScale - 1) * smoothstep(eased) + bell(eased) * 0.03;
       place(x, y, rotation, scale);
       if (t < 1) {
         frame = requestAnimationFrame(tick);
       } else if (!finished) {
         finished = true;
-        doneRef.current();
+        place(to.x, to.y, 0, dockScale);
+        frame = requestAnimationFrame(() => doneRef.current());
       }
     };
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [delay, duration, from.x, from.y, lift, tilt, to.x, to.y, weave]);
+  }, [delay, dockScale, duration, from, height, size, tilt, to, weave]);
 
   return (
     <div
       ref={tileRef}
       data-flight
       aria-hidden
-      className="pointer-events-none fixed top-0 left-0 z-40 will-change-transform"
+      className="flight-tile pointer-events-none fixed top-0 left-0"
       style={{
         width: size,
-        transform: `translate3d(${from.x}px, ${from.y}px, 0) translate(-50%, -50%) rotate(${tilt}deg)`,
+        height,
+        zIndex: layer,
+        transform: `translate3d(${from.x - size / 2}px, ${from.y - height / 2}px, 0) rotate(${tilt}deg) scale(1)`,
       }}
     >
-      <MediaTile src={src} name={name} kind={kind} className="w-full" />
+      <MediaTile src={src} name={name} kind={kind} className="h-full w-full" />
     </div>
   );
 }

@@ -130,14 +130,41 @@ function CategoryLine({
               className="mt-3 flex min-h-[92px] gap-2 overflow-x-auto pb-1"
               onClick={settled ? () => onOpen(category.id) : undefined}
             >
-              {category.items.map((item) => (
-                <div key={item.id} data-landed={item.id} className="w-[76px] shrink-0">
-                  <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
-                </div>
-              ))}
+              <DockSlots category={category} />
             </div>
           </li>
   );
+}
+
+function dockOrder(category: CategoryRow) {
+  if (category.slots.length > 0) return category.slots;
+  return category.items.map((item) => item.id);
+}
+
+function orderedItems(category: CategoryRow) {
+  const landed = new Map(category.items.map((item) => [item.id, item]));
+  return dockOrder(category)
+    .map((id) => landed.get(id))
+    .filter((item): item is CategoryRow["items"][number] => item !== undefined);
+}
+
+function DockSlots({ category }: { category: CategoryRow }) {
+  const landed = new Map(category.items.map((item) => [item.id, item]));
+  return dockOrder(category).map((id) => {
+    const item = landed.get(id);
+    if (!item) {
+      return (
+        <div key={id} data-dock-slot={id} aria-hidden className="w-[76px] shrink-0 p-1 invisible">
+          <div className="aspect-[4/5] w-full" />
+        </div>
+      );
+    }
+    return (
+      <div key={id} data-dock-slot={id} data-landed={id} className="w-[76px] shrink-0">
+        <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
+      </div>
+    );
+  });
 }
 
 function CountTick({ count }: { count: number }) {
@@ -165,8 +192,8 @@ function CategoryGrid({
 
   return (
     <div className="px-6 py-6 sm:px-10" role="region" aria-label={`${category.name} photos`}>
-      <Button type="button" variant="outline" className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3 text-[#3c443e]" onClick={onClose}>
-        <X data-icon="inline-start" />
+      <Button type="button" variant="outline" className="h-10 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3 text-[#3c443e]" onClick={onClose}>
+        <X data-icon="inline-start" className="size-4" />
         Close
       </Button>
       <h2 className="mt-5 text-[2.2rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e]">
@@ -174,7 +201,7 @@ function CategoryGrid({
       </h2>
       <p className="mt-2 text-sm text-[#5f6a62]">{countLabel(category.items.length)}</p>
       <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {category.items.map((item) => (
+        {orderedItems(category).map((item) => (
           <li key={item.id} className="min-w-0">
             <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
             <p className="mt-2 truncate text-sm text-[#3c443e]">{item.name}</p>

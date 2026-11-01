@@ -32,7 +32,7 @@ import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { Download, FolderOpen, Images } from "lucide-react";
+import { Download, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
@@ -48,8 +48,9 @@ type Flight = {
   delay: number;
   tilt: number;
   size: number;
-  lift: number;
   weave: number;
+  dockScale: number;
+  layer: number;
   duration: number;
   categoryId: string;
   categoryName: string;
@@ -156,7 +157,7 @@ function withShells(categories: CategoryRow[], wave: Held[]): CategoryRow[] {
   let next = categories;
   for (const entry of wave) {
     if (!next.some((category) => category.id === entry.hit.id)) {
-      next = [...next, { id: entry.hit.id, name: entry.hit.name, items: [] }];
+      next = [...next, { id: entry.hit.id, name: entry.hit.name, items: [], slots: [] }];
     }
   }
   return next;
@@ -180,11 +181,29 @@ function withLanded(
     file: item.file,
   };
   if (index < 0) {
-    return [...categories, { id: categoryId, name: categoryName, items: [tile] }];
+    return [...categories, { id: categoryId, name: categoryName, items: [tile], slots: [item.id] }];
   }
   const next = categories.slice();
   const category = next[index];
-  next[index] = { ...category, items: [...category.items, tile] };
+  const slots = category.slots.includes(item.id) ? category.slots : [...category.slots, item.id];
+  next[index] = { ...category, items: [...category.items, tile], slots };
+  return next;
+}
+
+/** Hold each incoming tile's place in the row before anything leaves the pile. */
+function withReservations(categories: CategoryRow[], wave: Held[]): CategoryRow[] {
+  let next = categories.map((category) => ({
+    ...category,
+    slots: category.slots.length > 0 ? [...category.slots] : category.items.map((item) => item.id),
+  }));
+  for (const entry of wave) {
+    const index = next.findIndex((category) => category.id === entry.hit.id);
+    if (index < 0) continue;
+    const category = next[index];
+    if (category.slots.includes(entry.item.id)) continue;
+    next = next.slice();
+    next[index] = { ...category, slots: [...category.slots, entry.item.id] };
+  }
   return next;
 }
 
@@ -196,15 +215,38 @@ function measureCenter(selector: string): Point | null {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-function measureDock(categoryId: string, index: number): Point | null {
-  const element = document.querySelector(`[data-dock="${CSS.escape(categoryId)}"]`);
-  if (!element) return null;
-  const rect = element.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return null;
-  return {
-    x: rect.left + 48 + (index % 6) * 14,
-    y: rect.top + Math.min(rect.height / 2, 48),
-  };
+const DOCK_TILE_PX = 76;
+
+/**
+ * Bring the landing rows into the board before they are measured. Scrolling
+ * during the flight would move the dock out from under the tiles.
+ */
+function revealDocks(ids: string[]) {
+  const nodes = ids
+    .map((slotId) => document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`))
+    .filter((node): node is HTMLElement => node instanceof HTMLElement);
+  if (nodes.length === 0) return;
+  const rects = nodes.map((node) => node.getBoundingClientRect());
+  const minTop = Math.min(...rects.map((rect) => rect.top));
+  const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
+  const scroller = document.querySelector("[data-board-scroll]");
+  if (scroller instanceof HTMLElement && scroller.scrollHeight > scroller.clientHeight + 2) {
+    const view = scroller.getBoundingClientRect();
+    const span = maxBottom - minTop;
+    const delta =
+      span <= view.height
+        ? (minTop + maxBottom) / 2 - (view.top + view.bottom) / 2
+        : minTop - view.top - 12;
+    if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+    return;
+  }
+  if (minTop < 8 || maxBottom > window.innerHeight - 8) {
+    const mid = (minTop + maxBottom) / 2;
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + mid - window.innerHeight / 2),
+      behavior: "instant",
+    });
+  }
 }
 
 function fileWord(count: number) {
@@ -534,24 +576,13 @@ export function SorterApp() {
 
     async function launchWave(wave: Held[]): Promise<void> {
       if (runId.current !== id || wave.length === 0) return;
-      setState((current) =>
-        runId.current === id ? { ...current, categories: withShells(current.categories, wave) } : current,
-      );
-      await nextPaint();
-      if (runId.current !== id) return;
-      document
-        .querySelector(`[data-dock="${CSS.escape(wave[0].hit.id)}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-      await nextPaint();
-      if (runId.current !== id) return;
-
       const ids = new Set(wave.map((entry) => entry.item.id));
       for (const itemId of ids) removed.add(itemId);
 
       if (prefersReducedMotion()) {
         setState((current) => {
           if (runId.current !== id) return current;
-          let categories = current.categories;
+          let categories = withShells(current.categories, wave);
           for (const entry of wave) {
             categories = withLanded(categories, entry.hit.id, entry.hit.name, entry.item);
           }
@@ -566,16 +597,28 @@ export function SorterApp() {
         return;
       }
 
+      setState((current) =>
+        runId.current === id
+          ? { ...current, categories: withReservations(withShells(current.categories, wave), wave) }
+          : current,
+      );
+      await nextPaint();
+      if (runId.current !== id) return;
+      revealDocks(wave.map((entry) => entry.item.id));
+      await nextPaint();
+      if (runId.current !== id) return;
+
       const stage = measureCenter("[data-flock-stage]");
       const flights: Flight[] = wave.map((entry, index) => {
         const look = flockLook(entry.item.id);
         const from =
           measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`) ??
-          (stage ? { x: stage.x + (index % 5) * 10 - 20, y: stage.y } : { x: 140, y: 200 });
-        const to = measureDock(entry.hit.id, index) ?? {
-          x: Math.min(window.innerWidth * 0.72, window.innerWidth - 80),
-          y: 240,
-        };
+          (stage ? { x: stage.x, y: stage.y } : { x: 140, y: 200 });
+        const to = measureCenter(`[data-dock-slot="${CSS.escape(entry.item.id)}"]`) ??
+          measureCenter(`[data-dock="${CSS.escape(entry.hit.id)}"]`) ?? {
+            x: Math.min(window.innerWidth * 0.72, window.innerWidth - 80),
+            y: Math.min(window.innerHeight * 0.62, window.innerHeight - 80),
+          };
         return {
           key: entry.item.id,
           runId: id,
@@ -585,8 +628,9 @@ export function SorterApp() {
           delay: index * FLOCK_STAGGER_MS,
           tilt: look.tilt,
           size: look.size,
-          lift: 96 + (index % 5) * 18,
-          weave: (index % 2 === 0 ? 1 : -1) * (26 + (index % 4) * 8),
+          weave: Math.round(look.tilt * 0.65),
+          dockScale: DOCK_TILE_PX / look.size,
+          layer: 40 + index,
           duration: flightDuration(entry.item.id),
           categoryId: entry.hit.id,
           categoryName: entry.hit.name,
@@ -822,6 +866,11 @@ export function SorterApp() {
   const sorting = state.phase === "sorting";
   const lifting = state.flights.length > 0;
   const readCount = state.labeled + state.unreadable;
+  const intakeOpen =
+    state.modelLine !== null ||
+    state.pile.length > 0 ||
+    (state.total > 0 && readCount < state.total);
+  const preparing = sorting && !lifting && intakeOpen;
   const progressRatio =
     state.modelRatio !== null
       ? state.modelRatio
@@ -834,9 +883,18 @@ export function SorterApp() {
       ? state.landed > 0
         ? `The flock is landing · ${state.landed} settled`
         : "The flock is landing"
-      : sorting
-        ? `Reading the pile · ${readCount} of ${state.total}`
+      : preparing
+        ? state.total > 0
+          ? `Sorting the pile · ${readCount} of ${state.total}`
+          : "Sorting the pile"
         : null;
+  const pileClear =
+    sorting &&
+    !lifting &&
+    state.pile.length === 0 &&
+    state.total > 0 &&
+    readCount >= state.total &&
+    state.modelLine === null;
 
   return (
     <div
@@ -858,7 +916,7 @@ export function SorterApp() {
         items={state.pile}
         dragOver={dragOver}
         lifting={lifting}
-        landed={settled && state.pile.length === 0 && !lifting}
+        landed={(settled || pileClear) && state.pile.length === 0 && !lifting}
       />
       <section className="paper-board flex min-h-0 min-w-0 flex-1 flex-col border-t border-[#d3dcd0] md:border-t-0 md:border-l">
         <header className="shrink-0 px-6 py-7 sm:px-10 sm:py-9">
@@ -887,20 +945,21 @@ export function SorterApp() {
                 <Button
                   type="button"
                   size="lg"
-                  className="h-11 rounded-2xl px-4"
+                  className="h-11 gap-1.5 rounded-2xl px-4"
                   onClick={onDownload}
                   disabled={zipping}
                 >
-                  <Download data-icon="inline-start" />
+                  <Download data-icon="inline-start" className="size-4" />
                   {zipping ? "Packing folders…" : "Download folders"}
                 </Button>
                 <Button
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="h-11 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
+                  className="h-11 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
                   onClick={resetBoard}
                 >
+                  <RefreshCw data-icon="inline-start" className="size-4" />
                   Sort another set
                 </Button>
               </div>
@@ -917,9 +976,10 @@ export function SorterApp() {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="h-11 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
+                  className="h-11 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
                   onClick={resetBoard}
                 >
+                  <RefreshCw data-icon="inline-start" className="size-4" />
                   Sort another set
                 </Button>
               </div>
@@ -934,9 +994,12 @@ export function SorterApp() {
                 settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
               )}
             >
-              <span className="pointer-events-none">
-                Choose files
-                <span className="font-normal opacity-75"> · images and videos</span>
+              <span className="pointer-events-none inline-flex items-center gap-1.5">
+                <ImageIcon data-icon="inline-start" className="size-4" />
+                <span>
+                  Choose files
+                  <span className="font-normal opacity-75"> · images and videos</span>
+                </span>
               </span>
               <input
                 id="photo-file-input"
@@ -950,7 +1013,7 @@ export function SorterApp() {
                 onChange={onFiles}
               />
             </label>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
               <label
                 className={cn(
                   buttonVariants({ size: "lg", variant: "outline" }),
@@ -958,7 +1021,7 @@ export function SorterApp() {
                 )}
               >
                 <span className="pointer-events-none inline-flex items-center gap-1.5">
-                  <FolderOpen data-icon="inline-start" />
+                  <FolderOpen data-icon="inline-start" className="size-4" />
                   Choose a folder
                 </span>
                 <input
@@ -974,16 +1037,13 @@ export function SorterApp() {
                   {...{ webkitdirectory: "", directory: "" }}
                 />
               </label>
-              <Button
+              <button
                 type="button"
-                size="lg"
-                variant="outline"
-                className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e]"
                 onClick={onSample}
+                className="cursor-pointer border-0 bg-transparent p-0 text-[13px] leading-none font-normal text-[#6e7f68] shadow-none underline-offset-4 hover:text-[#3c443e] hover:underline focus-visible:underline focus-visible:outline-none"
               >
-                <Images data-icon="inline-start" />
                 Try a sample folder
-              </Button>
+              </button>
             </div>
           </div>
 
@@ -995,8 +1055,9 @@ export function SorterApp() {
                   style={{ width: `${Math.round(progressRatio * 100)}%` }}
                 />
               </div>
-              <p className="mt-2 text-sm text-[#5a645c]" aria-live="polite">
-                {statusLine}
+              <p className="mt-2 flex items-center gap-2.5 text-sm text-[#5a645c]" aria-live="polite">
+                {preparing ? <SortingLoader /> : null}
+                <span>{statusLine}</span>
               </p>
             </div>
           ) : null}
@@ -1017,7 +1078,7 @@ export function SorterApp() {
             decodeFailures={state.decodeFailures}
           />
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto" data-board-scroll>
           <CategoryBoard
             categories={state.categories}
             sorting={sorting}
@@ -1041,13 +1102,25 @@ export function SorterApp() {
           delay={flight.delay}
           tilt={flight.tilt}
           size={flight.size}
-          lift={flight.lift}
           weave={flight.weave}
+          dockScale={flight.dockScale}
+          layer={flight.layer}
           duration={flight.duration}
           onDone={() => onFlightLand(flight)}
         />
       ))}
     </div>
+  );
+}
+
+function SortingLoader() {
+  return (
+    <span className="sorting-loader" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }
 
