@@ -27,7 +27,12 @@ export function MediaTile({
       <div className="relative">
         {/* Blob and object URLs are local files; next/image cannot optimize them. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={name} className="aspect-[4/5] h-full w-full rounded-[0.85rem] object-cover" />
+        <img
+          src={src}
+          alt={name}
+          draggable={false}
+          className="aspect-[4/5] h-full w-full rounded-[0.85rem] object-cover"
+        />
         <Badge
           variant="secondary"
           className="absolute bottom-1.5 left-1.5 h-4 border-0 bg-[#6e7f68]/90 px-1.5 text-[10px] tracking-wide text-[#f4f7f2] uppercase"

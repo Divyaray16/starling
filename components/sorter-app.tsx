@@ -32,8 +32,8 @@ import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { Download, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Check, Download, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
 
@@ -215,7 +215,77 @@ function measureCenter(selector: string): Point | null {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
+function measureSlot(slotId: string): { center: Point; width: number } | null {
+  const element = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
+  if (!(element instanceof HTMLElement)) return null;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 8 || rect.height < 8) return null;
+  return {
+    center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+    width: rect.width,
+  };
+}
+
+/** Keep a late slot inside the strip before it is measured, without scrolling the page. */
+function revealStripSlot(slotId: string) {
+  const node = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
+  if (!(node instanceof HTMLElement)) return;
+  const strip = node.closest("[data-dock]");
+  if (!(strip instanceof HTMLElement)) return;
+  const nodeRect = node.getBoundingClientRect();
+  const stripRect = strip.getBoundingClientRect();
+  const pad = 8;
+  if (nodeRect.right > stripRect.right - pad) {
+    strip.scrollLeft += nodeRect.right - (stripRect.right - pad);
+  } else if (nodeRect.left < stripRect.left + pad) {
+    strip.scrollLeft -= stripRect.left + pad - nodeRect.left;
+  }
+}
+
 const DOCK_TILE_PX = 76;
+const SAVED_FLASH_MS = 2000;
+
+/** Manual correction. The original file moves with the tile; nothing is reclassified. */
+function moveLandedTile(
+  categories: CategoryRow[],
+  itemId: string,
+  fromId: string,
+  toId: string,
+): CategoryRow[] {
+  if (fromId === toId) return categories;
+  const from = categories.find((category) => category.id === fromId);
+  const to = categories.find((category) => category.id === toId);
+  if (!from || !to) return categories;
+  const item = from.items.find((entry) => entry.id === itemId);
+  if (!item || to.items.some((entry) => entry.id === itemId)) return categories;
+
+  const orderOf = (category: CategoryRow) =>
+    category.slots.length > 0 ? category.slots : category.items.map((entry) => entry.id);
+
+  const next: CategoryRow[] = [];
+  for (const category of categories) {
+    if (category.id === fromId) {
+      const items = category.items.filter((entry) => entry.id !== itemId);
+      if (items.length === 0) continue;
+      next.push({
+        ...category,
+        items,
+        slots: orderOf(category).filter((id) => id !== itemId),
+      });
+      continue;
+    }
+    if (category.id === toId) {
+      next.push({
+        ...category,
+        items: [...category.items, item],
+        slots: [...orderOf(category).filter((id) => id !== itemId), itemId],
+      });
+      continue;
+    }
+    next.push(category);
+  }
+  return next;
+}
 
 /**
  * Bring the landing rows into the board before they are measured. Scrolling
@@ -267,6 +337,8 @@ export function SorterApp() {
   const [dragOver, setDragOver] = useState(false);
   const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [downloadSaved, setDownloadSaved] = useState(false);
+  const savedTimer = useRef<number | null>(null);
   const runId = useRef(0);
   const urls = useRef<string[]>([]);
   const landingsRef = useRef<Set<LandingWait>>(new Set());
@@ -281,8 +353,38 @@ export function SorterApp() {
       runId.current += 1;
       urls.current.forEach((url) => URL.revokeObjectURL(url));
       stopClipWorker();
+      if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
     };
   }, []);
+
+  const closeCategory = useCallback(() => setOpenCategoryId(null), []);
+
+  const onMoveTile = useCallback((itemId: string, fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setState((current) => {
+      if (current.phase !== "done") return current;
+      const categories = moveLandedTile(current.categories, itemId, fromId, toId);
+      if (categories === current.categories) return current;
+      return { ...current, categories };
+    });
+  }, []);
+
+  function clearSavedFlash() {
+    if (savedTimer.current !== null) {
+      window.clearTimeout(savedTimer.current);
+      savedTimer.current = null;
+    }
+    setDownloadSaved(false);
+  }
+
+  function showSavedFlash() {
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current);
+    setDownloadSaved(true);
+    savedTimer.current = window.setTimeout(() => {
+      savedTimer.current = null;
+      setDownloadSaved(false);
+    }, SAVED_FLASH_MS);
+  }
 
   function releaseLandings() {
     for (const pending of landingsRef.current) pending.resolve();
@@ -604,7 +706,9 @@ export function SorterApp() {
       );
       await nextPaint();
       if (runId.current !== id) return;
-      revealDocks(wave.map((entry) => entry.item.id));
+      const slotIds = wave.map((entry) => entry.item.id);
+      revealDocks(slotIds);
+      for (const slotId of slotIds) revealStripSlot(slotId);
       await nextPaint();
       if (runId.current !== id) return;
 
@@ -614,11 +718,13 @@ export function SorterApp() {
         const from =
           measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`) ??
           (stage ? { x: stage.x, y: stage.y } : { x: 140, y: 200 });
-        const to = measureCenter(`[data-dock-slot="${CSS.escape(entry.item.id)}"]`) ??
+        const slot = measureSlot(entry.item.id);
+        const to = slot?.center ??
           measureCenter(`[data-dock="${CSS.escape(entry.hit.id)}"]`) ?? {
             x: Math.min(window.innerWidth * 0.72, window.innerWidth - 80),
             y: Math.min(window.innerHeight * 0.62, window.innerHeight - 80),
           };
+        const dockWidth = slot?.width ?? DOCK_TILE_PX;
         return {
           key: entry.item.id,
           runId: id,
@@ -629,7 +735,7 @@ export function SorterApp() {
           tilt: look.tilt,
           size: look.size,
           weave: Math.round(look.tilt * 0.65),
-          dockScale: DOCK_TILE_PX / look.size,
+          dockScale: dockWidth / look.size,
           layer: 40 + index,
           duration: flightDuration(entry.item.id),
           categoryId: entry.hit.id,
@@ -829,12 +935,14 @@ export function SorterApp() {
     urls.current = [];
     setOpenCategoryId(null);
     setZipping(false);
+    clearSavedFlash();
     setState(EMPTY);
     dropUrlsLater(previous);
   }
 
   async function onDownload() {
     if (zipping) return;
+    clearSavedFlash();
     setZipping(true);
     setState((current) => ({ ...current, error: null }));
     try {
@@ -850,6 +958,7 @@ export function SorterApp() {
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      showSavedFlash();
     } catch {
       setState((current) => ({
         ...current,
@@ -889,6 +998,8 @@ export function SorterApp() {
     state.total > 0 &&
     readCount >= state.total &&
     state.modelLine === null;
+  const breathing = Boolean(statusLine?.startsWith("Sorting the pile"));
+  const downloadLabel = downloadSaved ? "Saved" : zipping ? "Packing folders…" : "Download folders";
 
   return (
     <div
@@ -911,6 +1022,7 @@ export function SorterApp() {
         dragOver={dragOver}
         lifting={lifting}
         landed={(settled || pileClear) && state.pile.length === 0 && !lifting}
+        breathing={breathing}
       />
       <section className="paper-board flex min-h-0 min-w-0 flex-1 flex-col border-t border-[#d3dcd0] md:border-t-0 md:border-l">
         <header className="shrink-0 px-6 py-7 sm:px-10 sm:py-9">
@@ -942,9 +1054,33 @@ export function SorterApp() {
                   className="h-11 gap-1.5 rounded-2xl px-4"
                   onClick={onDownload}
                   disabled={zipping}
+                  data-download-label={downloadLabel}
                 >
-                  <Download data-icon="inline-start" className="size-4" />
-                  {zipping ? "Packing folders…" : "Download folders"}
+                  {downloadSaved ? (
+                    <Check data-icon="inline-start" className="size-4" />
+                  ) : (
+                    <Download data-icon="inline-start" className="size-4" />
+                  )}
+                  <span className="inline-grid">
+                    <span
+                      className={`col-start-1 row-start-1 ${zipping || downloadSaved ? "invisible" : ""}`}
+                      aria-hidden={zipping || downloadSaved}
+                    >
+                      Download folders
+                    </span>
+                    <span
+                      className={`col-start-1 row-start-1 ${zipping ? "" : "invisible"}`}
+                      aria-hidden={!zipping}
+                    >
+                      Packing folders…
+                    </span>
+                    <span
+                      className={`col-start-1 row-start-1 ${downloadSaved ? "" : "invisible"}`}
+                      aria-hidden={!downloadSaved}
+                    >
+                      Saved
+                    </span>
+                  </span>
                 </Button>
               </div>
             </div>
@@ -1033,9 +1169,8 @@ export function SorterApp() {
 
           {sorting && statusLine ? (
             <div className="mt-6 max-w-lg">
-              <p className="flex items-center gap-2.5 text-sm text-[#5a645c]" aria-live="polite">
-                {preparing ? <SortingLoader /> : null}
-                <span>{statusLine}</span>
+              <p className="text-sm text-[#5a645c]" aria-live="polite" data-status-line={statusLine}>
+                {statusLine}
               </p>
             </div>
           ) : null}
@@ -1064,7 +1199,8 @@ export function SorterApp() {
             finishedEmpty={finishedEmpty}
             openCategoryId={openCategoryId}
             onOpen={setOpenCategoryId}
-            onClose={() => setOpenCategoryId(null)}
+            onClose={closeCategory}
+            onMove={onMoveTile}
           />
         </div>
       </section>
@@ -1088,17 +1224,6 @@ export function SorterApp() {
         />
       ))}
     </div>
-  );
-}
-
-function SortingLoader() {
-  return (
-    <span className="sorting-flock" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-    </span>
   );
 }
 
