@@ -4,6 +4,9 @@
  * folder: each one still goes through the same classifier and the same flock
  * animation. Names here are display names, not labels.
  */
+/** Stable mtime so choosing the sample twice in one session does not duplicate it. */
+const SAMPLE_MODIFIED = Date.UTC(2024, 0, 1);
+
 const SAMPLE_FILES: { file: string; name: string; type: string }[] = [
   { file: "food.jpg", name: "market-table.jpg", type: "image/jpeg" },
   { file: "portrait.jpg", name: "portrait.jpg", type: "image/jpeg" },
@@ -27,7 +30,7 @@ export async function loadSampleFolder(): Promise<{
       }
       const blob = await response.blob();
       const type = blob.type || entry.type;
-      return new File([blob], entry.name, { type });
+      return new File([blob], entry.name, { type, lastModified: SAMPLE_MODIFIED });
     }),
   );
   return { folderName: "Sample folder", files };

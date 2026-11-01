@@ -59,6 +59,38 @@ export function partitionFiles(files: File[]): Partition {
   return { supported, skipped };
 }
 
+/** Same name, size, and lastModified are the same file for this session. */
+export function fileIdentity(file: Pick<File, "name" | "size" | "lastModified">): string {
+  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+}
+
+/**
+ * Files in this pick that are not already in the session, and not repeated
+ * inside the pick itself. Does not record them; callers remember only the
+ * files they actually accept.
+ */
+export function takeNewFiles<T extends Pick<File, "name" | "size" | "lastModified">>(
+  files: T[],
+  seen: ReadonlySet<string>,
+): T[] {
+  const fresh: T[] = [];
+  const batch = new Set<string>();
+  for (const file of files) {
+    const key = fileIdentity(file);
+    if (seen.has(key) || batch.has(key)) continue;
+    batch.add(key);
+    fresh.push(file);
+  }
+  return fresh;
+}
+
+export function rememberFiles(
+  files: Array<Pick<File, "name" | "size" | "lastModified">>,
+  seen: Set<string>,
+) {
+  for (const file of files) seen.add(fileIdentity(file));
+}
+
 export async function prepareQueueItem(file: File): Promise<QueueItem> {
   const kind = mediaKind(file);
   if (kind === "video") {

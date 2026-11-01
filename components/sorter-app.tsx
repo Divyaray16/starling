@@ -25,6 +25,8 @@ import {
   filesFromList,
   partitionFiles,
   prepareQueueItem,
+  rememberFiles,
+  takeNewFiles,
 } from "@/lib/intake";
 import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
@@ -209,6 +211,15 @@ function fileWord(count: number) {
   return count === 1 ? "file" : "files";
 }
 
+function mergeFolderName(current: string | null, incoming: string): string {
+  if (!current) return incoming;
+  const parts = current.split(" · ").filter(Boolean);
+  if (parts.includes(incoming)) return parts.join(" · ");
+  parts.push(incoming);
+  if (parts.length <= 2) return parts.join(" · ");
+  return `${parts[0]} · ${parts.length - 1} more`;
+}
+
 export function SorterApp() {
   const [state, setState] = useState(EMPTY);
   const [dragOver, setDragOver] = useState(false);
@@ -217,6 +228,12 @@ export function SorterApp() {
   const runId = useRef(0);
   const urls = useRef<string[]>([]);
   const landingsRef = useRef<Set<LandingWait>>(new Set());
+  const seenKeys = useRef<Set<string>>(new Set());
+  const intakeQueue = useRef<File[]>([]);
+  const waveSize = useRef(0);
+  const sessionLive = useRef(false);
+  const pipelineRunning = useRef(false);
+  const pipelineToken = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -305,34 +322,125 @@ export function SorterApp() {
     }, 240);
   }
 
-  async function begin(folderName: string, files: File[]) {
-    const id = ++runId.current;
-    releaseLandings();
-    const previousUrls = urls.current;
-    urls.current = [];
-    setOpenCategoryId(null);
-    const partition = partitionFiles(files);
+  /**
+   * Adds into the open session. A later pick never replaces files already
+   * here, and canceling the dialog never reaches this function. Sort another
+   * set is the only way back to the empty board. Nothing is written to
+   * localStorage or IndexedDB, so a fresh load starts empty.
+   */
+  function acceptFiles(folderName: string, files: File[]) {
+    const fresh = takeNewFiles(files, seenKeys.current);
+    if (fresh.length === 0) return;
+    const partition = partitionFiles(fresh);
+    rememberFiles(fresh, seenKeys.current);
+
     if (partition.supported.length === 0) {
-      dropUrlsLater(previousUrls);
-      setState({
-        ...EMPTY,
-        error:
-          "Those files don’t include a JPEG, PNG, WebP, GIF, HEIC, HEIF, MP4, WebM, or MOV.",
-        skipped: partition.skipped,
-      });
+      if (!sessionLive.current) {
+        setState({
+          ...EMPTY,
+          error:
+            "Those files don’t include a JPEG, PNG, WebP, GIF, HEIC, HEIF, MP4, WebM, or MOV.",
+          skipped: partition.skipped,
+        });
+        return;
+      }
+      if (partition.skipped > 0) {
+        setState((current) => ({
+          ...current,
+          skipped: current.skipped + partition.skipped,
+        }));
+      }
       return;
     }
 
-    setState({
-      ...EMPTY,
-      phase: "sorting",
-      folderName,
-      total: partition.supported.length,
-      skipped: partition.skipped,
-      modelLine: "Loading the vision model. It stays in this browser.",
-      modelRatio: 0.04,
+    sessionLive.current = true;
+    intakeQueue.current.push(...partition.supported);
+    waveSize.current += partition.supported.length;
+    setOpenCategoryId(null);
+    setState((current) => {
+      const showBoot = !current.mode && current.phase === "empty";
+      return {
+        ...current,
+        phase: "sorting",
+        folderName: mergeFolderName(current.folderName, folderName),
+        total: current.total + partition.supported.length,
+        skipped: current.skipped + partition.skipped,
+        error: null,
+        modelLine: showBoot
+          ? "Loading the vision model. It stays in this browser."
+          : current.modelLine,
+        modelRatio: showBoot ? 0.04 : current.modelRatio,
+      };
     });
-    dropUrlsLater(previousUrls);
+    void runPipeline();
+  }
+
+  async function runPipeline() {
+    if (pipelineRunning.current) return;
+    pipelineRunning.current = true;
+    const token = ++pipelineToken.current;
+    const id = runId.current;
+    try {
+      await execute(id);
+    } catch {
+      if (runId.current !== id) return;
+      waveSize.current = 0;
+      setState((current) =>
+        runId.current === id
+          ? {
+              ...current,
+              phase: "done",
+              flights: [],
+              modelLine: null,
+              modelRatio: null,
+              error: "The sort stopped before the flock could land.",
+            }
+          : current,
+      );
+    } finally {
+      if (pipelineToken.current === token) pipelineRunning.current = false;
+    }
+    if (pipelineToken.current === token && runId.current === id && intakeQueue.current.length > 0) {
+      void runPipeline();
+    }
+  }
+
+  async function execute(id: number) {
+    while (runId.current === id) {
+      if (intakeQueue.current.length === 0) {
+        await sleep(40);
+        if (runId.current !== id) return;
+        if (intakeQueue.current.length === 0) break;
+      }
+      await runOneDrain(id);
+    }
+    if (runId.current !== id) return;
+    markDone(id);
+  }
+
+  function markDone(id: number) {
+    if (runId.current !== id) return;
+    waveSize.current = 0;
+    setState((current) => {
+      if (runId.current !== id) return current;
+      let categories = current.categories;
+      for (const flight of current.flights) {
+        categories = withLanded(categories, flight.categoryId, flight.categoryName, flight.item);
+      }
+      const added = countItems(categories) - countItems(current.categories);
+      return {
+        ...current,
+        phase: "done",
+        flights: [],
+        modelLine: null,
+        modelRatio: null,
+        categories: categories.filter((category) => category.items.length > 0),
+        landed: current.landed + added,
+      };
+    });
+  }
+
+  async function runOneDrain(id: number) {
 
     onModelProgress((progress) => {
       if (runId.current !== id) return;
@@ -370,30 +478,39 @@ export function SorterApp() {
     };
 
     const preparing = (async () => {
-      for (const file of partition.supported) {
-        if (runId.current !== id) return;
-        try {
-          const item = await prepareQueueItem(file);
-          if (runId.current !== id) {
-            URL.revokeObjectURL(item.thumbUrl);
-            return;
+      try {
+        while (runId.current === id) {
+          const file = intakeQueue.current.shift();
+          if (!file) {
+            await sleep(48);
+            if (runId.current !== id) return;
+            if (intakeQueue.current.length === 0) break;
+            continue;
           }
-          prepared.push(item);
-          urls.current.push(item.thumbUrl);
-          syncPile();
-        } catch {
-          setState((current) =>
-            runId.current === id
-              ? {
-                  ...current,
-                  unreadable: current.unreadable + 1,
-                  decodeFailures: [...current.decodeFailures, file.name],
-                }
-              : current,
-          );
+          try {
+            const item = await prepareQueueItem(file);
+            if (runId.current !== id) {
+              URL.revokeObjectURL(item.thumbUrl);
+              return;
+            }
+            prepared.push(item);
+            urls.current.push(item.thumbUrl);
+            syncPile();
+          } catch {
+            setState((current) =>
+              runId.current === id
+                ? {
+                    ...current,
+                    unreadable: current.unreadable + 1,
+                    decodeFailures: [...current.decodeFailures, file.name],
+                  }
+                : current,
+            );
+          }
         }
+      } finally {
+        prepDone = true;
       }
-      prepDone = true;
     })();
 
     let mode: ClassifierMode = "clip";
@@ -593,10 +710,9 @@ export function SorterApp() {
     })();
 
     const pendingFlights: Promise<void>[] = [];
-    const folderTotal = partition.supported.length;
     const consumer = (async () => {
       while (runId.current === id) {
-        const take = flockReleaseCount(held.length, producerDone, folderTotal);
+        const take = flockReleaseCount(held.length, producerDone, waveSize.current);
         if (take > 0) {
           const wave = held.splice(0, take);
           pendingFlights.push(launchWave(wave));
@@ -609,49 +725,15 @@ export function SorterApp() {
       await Promise.all(pendingFlights);
     })();
 
-    try {
-      await Promise.all([preparing, producer, consumer]);
-    } catch {
-      if (runId.current !== id) return;
-      setState((current) =>
-        runId.current === id
-          ? {
-              ...current,
-              phase: "done",
-              flights: [],
-              modelLine: null,
-              modelRatio: null,
-              error: "The sort stopped before the flock could land.",
-            }
-          : current,
-      );
-      return;
-    }
+    await Promise.all([preparing, producer, consumer]);
     if (runId.current !== id) return;
-    setState((current) => {
-      if (runId.current !== id) return current;
-      let categories = current.categories;
-      for (const flight of current.flights) {
-        categories = withLanded(categories, flight.categoryId, flight.categoryName, flight.item);
-      }
-      const added = countItems(categories) - countItems(current.categories);
-      return {
-        ...current,
-        phase: "done",
-        flights: [],
-        modelLine: null,
-        modelRatio: null,
-        categories: categories.filter((category) => category.items.length > 0),
-        landed: current.landed + added,
-      };
-    });
   }
 
   async function onSample() {
     setState((current) => ({ ...current, error: null }));
     try {
       const sample = await loadSampleFolder();
-      await begin(sample.folderName, sample.files);
+      acceptFiles(sample.folderName, sample.files);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -663,11 +745,13 @@ export function SorterApp() {
     }
   }
 
-  async function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
+  function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
+    // Clearing the value lets the same file be chosen again later. An empty
+    // list is a cancel: leave the session untouched.
     event.target.value = "";
     if (files.length === 0) return;
-    await begin("Selected files", files);
+    acceptFiles("Selected files", files);
   }
 
   async function onDirectory(event: React.ChangeEvent<HTMLInputElement>) {
@@ -675,7 +759,7 @@ export function SorterApp() {
     event.target.value = "";
     if (files.length === 0) return;
     const folder = await filesFromList(files);
-    await begin(folder.folderName, folder.files);
+    acceptFiles(folder.folderName, folder.files);
   }
 
   async function onDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -690,7 +774,7 @@ export function SorterApp() {
         }));
         return;
       }
-      await begin(folder.folderName, folder.files);
+      acceptFiles(folder.folderName, folder.files);
     } catch {
       setState((current) => ({
         ...current,
@@ -701,6 +785,12 @@ export function SorterApp() {
 
   function resetBoard() {
     runId.current += 1;
+    pipelineToken.current += 1;
+    pipelineRunning.current = false;
+    sessionLive.current = false;
+    intakeQueue.current = [];
+    seenKeys.current = new Set();
+    waveSize.current = 0;
     releaseLandings();
     const previous = urls.current;
     urls.current = [];
@@ -764,6 +854,7 @@ export function SorterApp() {
       className="flex min-h-dvh flex-col md:h-dvh md:flex-row md:overflow-hidden"
       data-phase={state.phase}
       data-settled={settled ? "true" : "false"}
+      data-files={fileCount}
       onDragOver={(event) => {
         event.preventDefault();
         setDragOver(true);
