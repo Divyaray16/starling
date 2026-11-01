@@ -119,6 +119,24 @@
   color: #3c443e;
 }
 
+/* The tray the flock lands in. A quiet step from the page field toward sage. */
+.landing-surface {
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, #e4eee8 0%, #dbe7e1 42%, #d3e2da 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(86, 112, 98, 0.28),
+    inset 0 18px 36px rgba(80, 108, 94, 0.07);
+  padding: 0.65rem 0.5rem 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .landing-surface {
+    padding: 0.8rem 0.65rem 0.9rem;
+  }
+}
+
 .accent-word {
   font-family: var(--font-serif), Georgia, serif;
   font-style: italic;
@@ -183,7 +201,58 @@
     box-shadow 220ms cubic-bezier(0.22, 0.82, 0.18, 1);
 }
 
-.category-row[data-warm="true"] {
+.category-row-hit {
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-row[data-openable="true"]:hover,
+.category-row[data-openable="true"]:focus-within {
+  background-color: rgba(159, 196, 188, 0.28);
+}
+
+.category-row[data-openable="true"]:focus-within {
+  box-shadow: inset 0 0 0 1.5px rgba(110, 127, 104, 0.38);
+}
+
+button.category-row-hit:focus-visible {
+  outline: none;
+}
+
+.category-open {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: #6e7f68;
+  background: transparent;
+  transition:
+    background-color 180ms cubic-bezier(0.22, 0.82, 0.18, 1),
+    border-color 180ms cubic-bezier(0.22, 0.82, 0.18, 1),
+    color 180ms cubic-bezier(0.22, 0.82, 0.18, 1);
+}
+
+.category-row[data-openable="true"]:hover .category-open,
+.category-row[data-openable="true"]:focus-within .category-open {
+  background: rgba(243, 245, 239, 0.94);
+  border-color: rgba(110, 127, 104, 0.3);
+  color: #3c443e;
+}
+
+.category-row[data-warm="true"],
+.category-row[data-warm="true"]:hover,
+.category-row[data-warm="true"]:focus-within {
   background-color: rgba(159, 196, 188, 0.4);
   box-shadow: inset 0 0 0 1px rgba(110, 127, 104, 0.16);
 }
@@ -303,11 +372,14 @@
     opacity: 0.85;
   }
 
-  .category-row {
+  .category-row,
+  .category-open {
     transition: none;
   }
 
-  .category-row[data-warm="true"] {
+  .category-row[data-warm="true"],
+  .category-row[data-warm="true"]:hover,
+  .category-row[data-warm="true"]:focus-within {
     background-color: transparent;
     box-shadow: none;
   }

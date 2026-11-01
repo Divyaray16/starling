@@ -3,8 +3,8 @@
 import { MediaTile } from "@/components/media-tile";
 import { Button } from "@/components/ui/button";
 import type { CategoryRow } from "@/lib/types";
-import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowUpRight, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 function countLabel(count: number) {
   if (count === 0) return "Landing";
@@ -36,29 +36,39 @@ export function CategoryBoard({
 
   if (categories.length === 0) {
     return (
-      <div className="px-6 py-8 sm:px-10 sm:py-10">
-        <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#3c443e]">
-          {finishedEmpty ? "Nothing landed" : "Nothing is sorted yet"}
-        </h2>
-        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#5a645c]">
-          {finishedEmpty
-            ? "Those files couldn’t be read, so the flock had nowhere to go."
-            : "Choose photos and videos, or try the sample set. Starling reads each file in this browser and keeps it on this machine. A category appears only when a file lands in it."}
-        </p>
-        {sorting ? (
-          <p className="mt-6 text-sm text-[#6b756c]">The flock is still together.</p>
-        ) : null}
-      </div>
+      <LandingSurface>
+        <div className="px-5 py-8 sm:px-7 sm:py-10">
+          <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#3c443e]">
+            {finishedEmpty ? "Nothing landed" : "Nothing is sorted yet"}
+          </h2>
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#5a645c]">
+            {finishedEmpty
+              ? "Those files couldn’t be read, so the flock had nowhere to go."
+              : "Choose photos and videos, or try the sample set. Starling reads each file in this browser and keeps it on this machine. A category appears only when a file lands in it."}
+          </p>
+          {sorting ? (
+            <p className="mt-6 text-sm text-[#6b756c]">The flock is still together.</p>
+          ) : null}
+        </div>
+      </LandingSurface>
     );
   }
 
   return (
-    <div className="px-6 pb-12 sm:px-10">
-      <ul className="divide-y divide-[#d3dcd0]">
+    <LandingSurface>
+      <ul className="divide-y divide-[#c5d2c8]">
         {categories.map((category) => (
           <CategoryLine key={category.id} category={category} settled={settled} onOpen={onOpen} />
         ))}
       </ul>
+    </LandingSurface>
+  );
+}
+
+function LandingSurface({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-6 pt-1 pb-8 sm:px-10 sm:pb-10">
+      <div className="landing-surface">{children}</div>
     </div>
   );
 }
@@ -89,50 +99,51 @@ function CategoryLine({
   onOpen: (id: string) => void;
 }) {
   const warm = useLandingWarmth(category.items.length);
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="min-w-0 truncate text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#3c443e]">
+          {category.name}
+        </h3>
+        <div className="flex shrink-0 items-center gap-1.5 text-sm text-[#5f6a62]">
+          <CountTick count={category.items.length} />
+          {settled ? (
+            <span className="category-open" aria-hidden="true">
+              <ArrowUpRight className="size-4" />
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div
+        data-dock={category.id}
+        data-count={category.items.length}
+        className="mt-3 flex min-h-[92px] gap-2 overflow-x-auto pb-1"
+      >
+        <DockSlots category={category} />
+      </div>
+    </>
+  );
+
   return (
-          <li
-            className="category-row category-enter relative rounded-2xl px-2 py-4"
-            data-category={category.id}
-            data-warm={warm ? "true" : "false"}
-          >
-            <div className="flex items-baseline justify-between gap-4">
-              {settled ? (
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-baseline justify-between gap-4 text-left"
-                  onClick={() => onOpen(category.id)}
-                  aria-label={`Open ${category.name}`}
-                >
-                  <h3 className="truncate text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#3c443e]">
-                    {category.name}
-                  </h3>
-                  <span className="shrink-0 text-sm text-[#5f6a62]">
-                    <CountTick count={category.items.length} />
-                    <span className="ml-3 text-[#3c443e] underline decoration-[#9fc4bc] underline-offset-4">
-                      Open
-                    </span>
-                  </span>
-                </button>
-              ) : (
-                <>
-                  <h3 className="text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#3c443e]">
-                    {category.name}
-                  </h3>
-                  <p className="text-sm text-[#5f6a62]">
-                    <CountTick count={category.items.length} />
-                  </p>
-                </>
-              )}
-            </div>
-            <div
-              data-dock={category.id}
-              data-count={category.items.length}
-              className="mt-3 flex min-h-[92px] gap-2 overflow-x-auto pb-1"
-              onClick={settled ? () => onOpen(category.id) : undefined}
-            >
-              <DockSlots category={category} />
-            </div>
-          </li>
+    <li
+      className="category-row category-enter relative rounded-2xl"
+      data-category={category.id}
+      data-warm={warm ? "true" : "false"}
+      data-openable={settled ? "true" : "false"}
+    >
+      {settled ? (
+        <button
+          type="button"
+          className="category-row-hit rounded-2xl px-2 py-4"
+          aria-label={`View ${category.name}`}
+          onClick={() => onOpen(category.id)}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="category-row-hit rounded-2xl px-2 py-4">{body}</div>
+      )}
+    </li>
   );
 }
 
