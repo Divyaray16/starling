@@ -37,16 +37,16 @@ export function CategoryBoard({
   if (categories.length === 0) {
     return (
       <div className="px-6 py-8 sm:px-10 sm:py-10">
-        <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#161616]">
+        <h2 className="max-w-md text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-[#3c443e]">
           {finishedEmpty ? "Nothing landed" : "Nothing is sorted yet"}
         </h2>
-        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#4e4742]">
+        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#5a645c]">
           {finishedEmpty
             ? "Those files couldn’t be read, so the flock had nowhere to go."
             : "Choose photos and videos, or try the sample set. Starling reads each file in this browser and keeps it on this machine. A category appears only when a file lands in it."}
         </p>
         {sorting ? (
-          <p className="mt-6 text-sm text-[#6a615b]">The flock is still together.</p>
+          <p className="mt-6 text-sm text-[#6b756c]">The flock is still together.</p>
         ) : null}
       </div>
     );
@@ -54,7 +54,7 @@ export function CategoryBoard({
 
   return (
     <div className="px-6 pb-12 sm:px-10">
-      <ul className="divide-y divide-[#eadfd6]">
+      <ul className="divide-y divide-[#d3dcd0]">
         {categories.map((category) => (
           <CategoryLine key={category.id} category={category} settled={settled} onOpen={onOpen} />
         ))}
@@ -103,22 +103,22 @@ function CategoryLine({
                   onClick={() => onOpen(category.id)}
                   aria-label={`Open ${category.name}`}
                 >
-                  <h3 className="truncate text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#161616]">
+                  <h3 className="truncate text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#3c443e]">
                     {category.name}
                   </h3>
-                  <span className="shrink-0 text-sm text-[#5e564f]">
+                  <span className="shrink-0 text-sm text-[#5f6a62]">
                     <CountTick count={category.items.length} />
-                    <span className="ml-3 text-[#161616] underline decoration-[#e7b7c6] underline-offset-4">
+                    <span className="ml-3 text-[#3c443e] underline decoration-[#9fc4bc] underline-offset-4">
                       Open
                     </span>
                   </span>
                 </button>
               ) : (
                 <>
-                  <h3 className="text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#161616]">
+                  <h3 className="text-[1.65rem] leading-none font-semibold tracking-[-0.03em] text-[#3c443e]">
                     {category.name}
                   </h3>
-                  <p className="text-sm text-[#5e564f]">
+                  <p className="text-sm text-[#5f6a62]">
                     <CountTick count={category.items.length} />
                   </p>
                 </>
@@ -165,19 +165,19 @@ function CategoryGrid({
 
   return (
     <div className="px-6 py-6 sm:px-10" role="region" aria-label={`${category.name} photos`}>
-      <Button type="button" variant="outline" className="h-10 bg-transparent px-3" onClick={onClose}>
+      <Button type="button" variant="outline" className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3 text-[#3c443e]" onClick={onClose}>
         <X data-icon="inline-start" />
         Close
       </Button>
-      <h2 className="mt-5 text-[2.2rem] leading-none font-semibold tracking-[-0.04em] text-[#161616]">
+      <h2 className="mt-5 text-[2.2rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e]">
         {category.name}
       </h2>
-      <p className="mt-2 text-sm text-[#5e564f]">{countLabel(category.items.length)}</p>
+      <p className="mt-2 text-sm text-[#5f6a62]">{countLabel(category.items.length)}</p>
       <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {category.items.map((item) => (
           <li key={item.id} className="min-w-0">
             <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
-            <p className="mt-2 truncate text-sm text-[#161616]">{item.name}</p>
+            <p className="mt-2 truncate text-sm text-[#3c443e]">{item.name}</p>
           </li>
         ))}
       </ul>

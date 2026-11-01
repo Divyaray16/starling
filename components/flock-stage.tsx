@@ -43,21 +43,21 @@ export function FlockStage({
     >
       <header className="z-10 flex shrink-0 items-end justify-between px-6 pt-6 pb-2 sm:px-8">
         <div>
-          <p className="text-[11px] font-medium tracking-[0.18em] text-[#8a7f78] uppercase">
+          <p className="text-[11px] font-medium tracking-[0.18em] text-[#7a857c] uppercase">
             {eyebrow}
           </p>
-          <h2 className="mt-1 text-[1.85rem] leading-none font-semibold tracking-[-0.04em] text-[#161616]">
+          <h2 className="mt-1 text-[1.85rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e]">
             {title}
           </h2>
         </div>
-        <p className="text-sm text-[#5e564f] tabular-nums">{count}</p>
+        <p className="text-sm text-[#5f6a62] tabular-nums">{count}</p>
       </header>
 
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-8 pb-10">
           <div className="max-w-xs text-center">
             {landed ? (
-              <p className="text-[15px] leading-relaxed text-[#3f3935]">
+              <p className="text-[15px] leading-relaxed text-[#4a524c]">
                 The pile lifted together. It is in the rows now.
               </p>
             ) : lifting ? (
@@ -65,11 +65,11 @@ export function FlockStage({
             ) : (
               <>
                 <div className="mx-auto mb-6 flex h-28 items-end justify-center" aria-hidden>
-                  <span className="block h-16 w-12 -translate-y-1 -rotate-12 bg-white shadow-[0_12px_24px_rgba(90,40,55,0.12)]" />
-                  <span className="z-10 -mx-3 block h-24 w-16 -rotate-2 bg-white shadow-[0_16px_30px_rgba(90,40,55,0.16)]" />
-                  <span className="block h-[4.5rem] w-12 translate-y-1 rotate-6 bg-white shadow-[0_12px_24px_rgba(90,40,55,0.12)]" />
+                  <span className="block h-16 w-12 -translate-y-1 -rotate-12 bg-[#f4f6f1] shadow-[0_12px_24px_rgba(70,90,75,0.12)]" />
+                  <span className="z-10 -mx-3 block h-24 w-16 -rotate-2 bg-[#f7f8f4] shadow-[0_16px_30px_rgba(70,90,75,0.14)]" />
+                  <span className="block h-[4.5rem] w-12 translate-y-1 rotate-6 bg-[#f4f6f1] shadow-[0_12px_24px_rgba(70,90,75,0.12)]" />
                 </div>
-                <p className="text-[15px] leading-relaxed text-[#3f3935]">
+                <p className="text-[15px] leading-relaxed text-[#4a524c]">
                   Drop photos and videos here. They wait as one pile, then lift together.
                 </p>
               </>
@@ -102,7 +102,7 @@ export function FlockStage({
             );
           })}
           {hidden > 0 ? (
-            <p className="absolute right-6 bottom-4 left-6 text-xs text-[#5e564f]">
+            <p className="absolute right-6 bottom-4 left-6 text-xs text-[#5f6a62]">
               {visible.length} on screen, {items.length} in the pile.
             </p>
           ) : null}

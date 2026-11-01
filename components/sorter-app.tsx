@@ -230,7 +230,6 @@ export function SorterApp() {
   const landingsRef = useRef<Set<LandingWait>>(new Set());
   const seenKeys = useRef<Set<string>>(new Set());
   const intakeQueue = useRef<File[]>([]);
-  const waveSize = useRef(0);
   const sessionLive = useRef(false);
   const pipelineRunning = useRef(false);
   const pipelineToken = useRef(0);
@@ -355,7 +354,6 @@ export function SorterApp() {
 
     sessionLive.current = true;
     intakeQueue.current.push(...partition.supported);
-    waveSize.current += partition.supported.length;
     setOpenCategoryId(null);
     setState((current) => {
       const showBoot = !current.mode && current.phase === "empty";
@@ -384,7 +382,6 @@ export function SorterApp() {
       await execute(id);
     } catch {
       if (runId.current !== id) return;
-      waveSize.current = 0;
       setState((current) =>
         runId.current === id
           ? {
@@ -420,7 +417,6 @@ export function SorterApp() {
 
   function markDone(id: number) {
     if (runId.current !== id) return;
-    waveSize.current = 0;
     setState((current) => {
       if (runId.current !== id) return current;
       let categories = current.categories;
@@ -477,16 +473,15 @@ export function SorterApp() {
       });
     };
 
+    // This drain is one delivery: the files already queued. A later pick is
+    // the next batch. Every file here is decoded and shown before any of
+    // them is classified or flown.
+    const batch = intakeQueue.current.splice(0, intakeQueue.current.length);
+
     const preparing = (async () => {
       try {
-        while (runId.current === id) {
-          const file = intakeQueue.current.shift();
-          if (!file) {
-            await sleep(48);
-            if (runId.current !== id) return;
-            if (intakeQueue.current.length === 0) break;
-            continue;
-          }
+        for (const file of batch) {
+          if (runId.current !== id) return;
           try {
             const item = await prepareQueueItem(file);
             if (runId.current !== id) {
@@ -508,6 +503,7 @@ export function SorterApp() {
             );
           }
         }
+        if (runId.current === id) await nextPaint();
       } finally {
         prepDone = true;
       }
@@ -661,18 +657,12 @@ export function SorterApp() {
       try {
         let cursor = 0;
         while (runId.current === id) {
-          const pendingCount = prepared.length - cursor;
-          if (pendingCount <= 0) {
-            if (prepDone) break;
+          if (!prepDone) {
             await sleep(16);
             continue;
           }
-          // Let a few files gather so one model pass covers the flock,
-          // unless preparation has already finished.
-          if (!prepDone && pendingCount < 4) {
-            await sleep(30);
-            continue;
-          }
+          const pendingCount = prepared.length - cursor;
+          if (pendingCount <= 0) break;
           const batch: QueueItem[] = [];
           let frames = 0;
           while (cursor < prepared.length && batch.length < 8 && frames < 10) {
@@ -712,7 +702,7 @@ export function SorterApp() {
     const pendingFlights: Promise<void>[] = [];
     const consumer = (async () => {
       while (runId.current === id) {
-        const take = flockReleaseCount(held.length, producerDone, waveSize.current);
+        const take = flockReleaseCount(held.length, producerDone);
         if (take > 0) {
           const wave = held.splice(0, take);
           pendingFlights.push(launchWave(wave));
@@ -790,7 +780,6 @@ export function SorterApp() {
     sessionLive.current = false;
     intakeQueue.current = [];
     seenKeys.current = new Set();
-    waveSize.current = 0;
     releaseLandings();
     const previous = urls.current;
     urls.current = [];
@@ -871,25 +860,25 @@ export function SorterApp() {
         lifting={lifting}
         landed={settled && state.pile.length === 0 && !lifting}
       />
-      <section className="paper-board flex min-h-0 min-w-0 flex-1 flex-col border-t border-[#eadfd6] md:border-t-0 md:border-l">
+      <section className="paper-board flex min-h-0 min-w-0 flex-1 flex-col border-t border-[#d3dcd0] md:border-t-0 md:border-l">
         <header className="shrink-0 px-6 py-7 sm:px-10 sm:py-9">
-          <h1 className="text-[2.8rem] leading-none font-semibold tracking-[-0.045em] text-[#161616] sm:text-[3.35rem]">
+          <h1 className="text-[2.8rem] leading-none font-semibold tracking-[-0.045em] text-[#3c443e] sm:text-[3.35rem]">
             Starling
           </h1>
-          <p className="mt-3 max-w-md text-lg leading-snug text-[#1c1c1c]">
+          <p className="mt-3 max-w-md text-lg leading-snug text-[#3c443e]">
             The pile lifts <em className="accent-word">together</em> and lands in place.
           </p>
 
           {state.folderName ? (
-            <p className="mt-4 text-sm text-[#5e564f]">{state.folderName}</p>
+            <p className="mt-4 text-sm text-[#5f6a62]">{state.folderName}</p>
           ) : null}
 
           {settled ? (
             <div className="mt-6 max-w-lg">
-              <h2 className="text-[2.15rem] leading-none font-semibold tracking-[-0.04em] text-[#161616]">
+              <h2 className="text-[2.15rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e]">
                 Settled.
               </h2>
-              <p className="mt-2 text-[15px] leading-relaxed text-[#4e4742]">
+              <p className="mt-2 text-[15px] leading-relaxed text-[#5a645c]">
                 {fileCount} {fileWord(fileCount)} in {state.categories.length}{" "}
                 {state.categories.length === 1 ? "category" : "categories"}. Open one, or take the
                 folders with you.
@@ -898,7 +887,7 @@ export function SorterApp() {
                 <Button
                   type="button"
                   size="lg"
-                  className="h-11 px-4"
+                  className="h-11 rounded-2xl px-4"
                   onClick={onDownload}
                   disabled={zipping}
                 >
@@ -909,7 +898,7 @@ export function SorterApp() {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="h-11 bg-transparent px-4"
+                  className="h-11 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
                   onClick={resetBoard}
                 >
                   Sort another set
@@ -928,7 +917,7 @@ export function SorterApp() {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="h-11 bg-transparent px-4"
+                  className="h-11 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-4 text-[#3c443e]"
                   onClick={resetBoard}
                 >
                   Sort another set
@@ -941,8 +930,8 @@ export function SorterApp() {
             <label
               className={cn(
                 buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                "media-picker h-11 cursor-pointer px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-                settled && "bg-transparent",
+                "media-picker h-11 cursor-pointer rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
               )}
             >
               <span className="pointer-events-none">
@@ -965,7 +954,7 @@ export function SorterApp() {
               <label
                 className={cn(
                   buttonVariants({ size: "lg", variant: "outline" }),
-                  "media-picker h-10 cursor-pointer bg-transparent px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                  "media-picker h-10 cursor-pointer rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                 )}
               >
                 <span className="pointer-events-none inline-flex items-center gap-1.5">
@@ -989,7 +978,7 @@ export function SorterApp() {
                 type="button"
                 size="lg"
                 variant="outline"
-                className="h-10 bg-transparent px-3.5"
+                className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e]"
                 onClick={onSample}
               >
                 <Images data-icon="inline-start" />
@@ -1000,25 +989,25 @@ export function SorterApp() {
 
           {sorting && statusLine ? (
             <div className="mt-6 max-w-lg">
-              <div className="h-1 overflow-hidden bg-[#eadfd6]">
+              <div className="h-1 overflow-hidden rounded-full bg-[#d5ddd0]">
                 <div
-                  className="h-full bg-[#171717] transition-[width] duration-300 ease-out"
+                  className="h-full bg-[#6e7f68] transition-[width] duration-300 ease-out"
                   style={{ width: `${Math.round(progressRatio * 100)}%` }}
                 />
               </div>
-              <p className="mt-2 text-sm text-[#4e4742]" aria-live="polite">
+              <p className="mt-2 text-sm text-[#5a645c]" aria-live="polite">
                 {statusLine}
               </p>
             </div>
           ) : null}
 
           {state.notice ? (
-            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#7a3050]" role="status">
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#4f5c48]" role="status">
               {state.notice}
             </p>
           ) : null}
           {state.error ? (
-            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#9d2348]" role="alert">
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#5c5348]" role="alert">
               {state.error}
             </p>
           ) : null}
@@ -1095,5 +1084,5 @@ function SkipLine({
       `${other} ${other === 1 ? "file" : "files"} couldn’t be read and ${other === 1 ? "was" : "were"} left out.`,
     );
   }
-  return <p className="mt-3 max-w-lg text-sm text-[#5e564f]">{parts.join(" ")}</p>;
+  return <p className="mt-3 max-w-lg text-sm text-[#5f6a62]">{parts.join(" ")}</p>;
 }

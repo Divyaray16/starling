@@ -1,30 +1,22 @@
 /**
- * A flock leaves as soon as it can. A small folder — the sample, or about
- * a dozen files — stays together and lifts in one burst the moment those
- * files are labeled, so they are in the air at the same time. A larger
- * folder does not sit through the rest of the classification: a handful
- * leaves as soon as they are labeled, and later tiles follow in overlapping
- * bursts. Departures are a few milliseconds apart. Each flight is under
- * about half a second.
+ * A batch sits together on the pile until every file in it is ready, then
+ * lifts as one flock. Departures are about 8–12ms apart, so the tiles share
+ * the air instead of leaving one at a time. Each flight is a short curve,
+ * about 280–380ms.
  */
-export const FLOCK_TOGETHER = 16;
-export const FLOCK_READY = 4;
-export const FLOCK_BURST = 16;
-export const FLOCK_STAGGER_MS = 14;
-export const FLOCK_FLIGHT_MIN_MS = 440;
-export const FLOCK_FLIGHT_MAX_MS = 540;
+export const FLOCK_STAGGER_MS = 10;
+export const FLOCK_FLIGHT_MIN_MS = 280;
+export const FLOCK_FLIGHT_MAX_MS = 380;
 /** Center of the flight range, used when a single duration is needed. */
-export const FLOCK_FLIGHT_MS = 490;
+export const FLOCK_FLIGHT_MS = 330;
 
-export function flockReleaseCount(held: number, producerDone: boolean, total: number): number {
-  if (held <= 0) return 0;
-  if (producerDone) return held;
-  if (total <= FLOCK_TOGETHER) return 0;
-  if (held >= FLOCK_READY) return Math.min(held, FLOCK_BURST);
-  return 0;
+/** The whole labeled batch leaves together. Nothing flies before the batch is ready. */
+export function flockReleaseCount(held: number, producerDone: boolean): number {
+  if (held <= 0 || !producerDone) return 0;
+  return held;
 }
 
-/** Stable flight length inside the 440–540ms range, so a flock is not a metronome. */
+/** Stable flight length inside the 280–380ms range, so a flock is not a metronome. */
 export function flightDuration(id: string): number {
   const span = FLOCK_FLIGHT_MAX_MS - FLOCK_FLIGHT_MIN_MS;
   return FLOCK_FLIGHT_MIN_MS + Math.round(unit(hash(id), 12) * span);

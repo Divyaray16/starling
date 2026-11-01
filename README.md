@@ -6,7 +6,7 @@ When the flock has settled, open a category to see its photos and videos, or dow
 
 ## The flock
 
-Thumbnails gather as one cloud on the motion side as soon as they can be shown. Starling labels them in the background with the on-device model. A small folder — the sample, or about a dozen files — lifts in one burst the moment those files are labeled, so the tiles are in the air together. A larger folder does not sit through the rest of the classification: once a handful are labeled they leave, and the next tiles follow in overlapping bursts. Departures are about 14 milliseconds apart. Each flight lasts under half a second, easing on a curve (a quick lift, a slight lean, a small scale settle) rather than a straight slide. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there.
+A batch — Choose files, Choose a folder, a drop, or the sample — is decoded onto the pile first, including HEIC. Nothing in that batch is labeled or flown until every file from it is on the pile. Then the flock lifts together. Departures are about 10 milliseconds apart. Each flight lasts about a third of a second, easing on a curve (a quick lift, a slight lean, a small scale settle) rather than a straight slide. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there. Files already landed stay where they are when another batch is added.
 
 If the browser asks for reduced motion, Starling skips the flight and shows the settled board.
 
@@ -58,5 +58,5 @@ The clip is a one-second view of the Shibuya photograph so the video path can be
 
 - HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
 - The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload. The empty page paints before that download starts.
-- A very large folder shows a dense sample of the cloud (72 tiles) plus the real count, and the flock leaves in overlapping bursts rather than one file at a time.
+- A very large folder shows a dense sample of the cloud (72 tiles) plus the real count. The batch is on the pile before it lifts, and the flock leaves together rather than one file at a time.
 - The file control opens the system file dialog for photos and videos, including HEIC and HEIF. You can also drop files on the pile. The folder control is separate and only helps when the browser allows choosing a directory.
