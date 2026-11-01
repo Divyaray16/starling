@@ -871,12 +871,6 @@ export function SorterApp() {
     state.pile.length > 0 ||
     (state.total > 0 && readCount < state.total);
   const preparing = sorting && !lifting && intakeOpen;
-  const progressRatio =
-    state.modelRatio !== null
-      ? state.modelRatio
-      : state.total > 0
-        ? Math.max(readCount, state.landed + state.unreadable) / state.total
-        : 0;
   const statusLine = state.modelLine
     ? state.modelLine
     : lifting
@@ -1049,13 +1043,7 @@ export function SorterApp() {
 
           {sorting && statusLine ? (
             <div className="mt-6 max-w-lg">
-              <div className="h-1 overflow-hidden rounded-full bg-[#d5ddd0]">
-                <div
-                  className="h-full bg-[#6e7f68] transition-[width] duration-300 ease-out"
-                  style={{ width: `${Math.round(progressRatio * 100)}%` }}
-                />
-              </div>
-              <p className="mt-2 flex items-center gap-2.5 text-sm text-[#5a645c]" aria-live="polite">
+              <p className="flex items-center gap-2.5 text-sm text-[#5a645c]" aria-live="polite">
                 {preparing ? <SortingLoader /> : null}
                 <span>{statusLine}</span>
               </p>
@@ -1115,7 +1103,7 @@ export function SorterApp() {
 
 function SortingLoader() {
   return (
-    <span className="sorting-loader" aria-hidden="true">
+    <span className="sorting-flock" aria-hidden="true">
       <span />
       <span />
       <span />
