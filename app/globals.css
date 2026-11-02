@@ -456,11 +456,11 @@ body.tile-grabbing * {
   position: relative;
   display: block;
   flex: none;
-  width: 92px;
+  width: 78px;
   height: 22px;
+  overflow: visible;
 }
 
-.sort-firefly,
 .sort-balls {
   position: absolute;
   inset: 0;
@@ -472,51 +472,31 @@ body.tile-grabbing * {
   top: 7px;
   width: 8px;
   height: 8px;
+  margin: 0;
   border-radius: 50%;
   background: #6e7f68;
-  transform-origin: center center;
-  animation-duration: 3s;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
 }
 
 .sort-ball:nth-child(1) {
-  left: 14px;
-  transform: scale(1.1);
-  animation-name: sort-pulse-1;
+  left: 8px;
 }
 
 .sort-ball:nth-child(2) {
-  left: 31px;
-  animation-name: sort-pulse-2;
+  left: 26px;
 }
 
 .sort-ball:nth-child(3) {
-  left: 48px;
-  animation-name: sort-pulse-3;
+  left: 44px;
 }
 
 .sort-ball:nth-child(4) {
-  left: 65px;
-  animation-name: sort-pulse-4;
+  left: 62px;
 }
 
 .sort-scan {
-  left: 6px;
+  left: 8px;
   background: #9fc4bc;
-  animation-name: sort-scan;
-  box-shadow: none;
-}
-
-.sort-scan-glow {
-  background: #9fc4bc;
-  box-shadow:
-    0 0 3px 1px rgba(159, 196, 188, 0.95),
-    0 0 8px 2px rgba(110, 127, 104, 0.4);
-}
-
-.sort-balls .sort-scan {
-  box-shadow: none;
+  animation: sort-scan 2.8s ease-in-out infinite;
 }
 
 @keyframes sort-scan {
@@ -525,68 +505,7 @@ body.tile-grabbing * {
     transform: translateX(0);
   }
   50% {
-    transform: translateX(67px);
-  }
-}
-
-@keyframes sort-pulse-1 {
-  0%,
-  100% {
-    transform: scale(1.1);
-  }
-  10%,
-  90% {
-    transform: scale(1.2);
-  }
-  20%,
-  80% {
-    transform: scale(1);
-  }
-}
-
-@keyframes sort-pulse-2 {
-  0%,
-  10%,
-  30%,
-  70%,
-  90%,
-  100% {
-    transform: scale(1);
-  }
-  20%,
-  80% {
-    transform: scale(1.2);
-  }
-}
-
-@keyframes sort-pulse-3 {
-  0%,
-  20%,
-  40%,
-  60%,
-  80%,
-  100% {
-    transform: scale(1);
-  }
-  30%,
-  70% {
-    transform: scale(1.2);
-  }
-}
-
-@keyframes sort-pulse-4 {
-  0%,
-  30%,
-  70%,
-  100% {
-    transform: scale(1);
-  }
-  40%,
-  60% {
-    transform: scale(1.2);
-  }
-  50% {
-    transform: scale(1.1);
+    transform: translateX(54px);
   }
 }
 
@@ -606,11 +525,6 @@ body.tile-grabbing * {
   .flock-tile[data-breathe="true"],
   .category-enter,
   .count-tick,
-  .sort-ball,
-  .sort-ball:nth-child(1),
-  .sort-ball:nth-child(2),
-  .sort-ball:nth-child(3),
-  .sort-ball:nth-child(4),
   .sort-scan {
     animation: none;
   }

@@ -33,7 +33,7 @@ import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { Check, Download, RefreshCw } from "lucide-react";
+import { Check, Download, Folder, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
@@ -1193,7 +1193,7 @@ export function SorterApp() {
                 data-folder-picker
                 className={cn(
                   buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                  "media-picker h-11 cursor-pointer rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                  "media-picker h-11 cursor-pointer gap-1.5 rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                   settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
                 )}
                 onDragOverCapture={(event) => {
@@ -1206,6 +1206,7 @@ export function SorterApp() {
                   void onDrop(event);
                 }}
               >
+                <Folder data-icon="inline-start" className="pointer-events-none size-4" aria-hidden="true" />
                 <span className="pointer-events-none">Choose files or folder</span>
                 <input
                   id="folder-file-input"
@@ -1303,37 +1304,34 @@ export function SorterApp() {
   );
 }
 
-/** A mint firefly scans four sage dots and melts through them. */
+/** A mint traveler scans four sage dots and melts through them. */
 function SortFlock() {
   return (
     <span className="sort-flock" data-sort-flock="firefly" aria-hidden="true">
       <svg className="sort-goo-svg" aria-hidden="true" focusable="false">
         <filter
           id="sort-goo"
-          x="-40%"
-          y="-90%"
-          width="180%"
-          height="280%"
+          x="-50%"
+          y="-120%"
+          width="200%"
+          height="340%"
           colorInterpolationFilters="sRGB"
         >
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="1.15" result="blur" />
           <feColorMatrix
             in="blur"
             mode="matrix"
-            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -8"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 14 -6.5"
             result="goo"
           />
         </filter>
       </svg>
-      <span className="sort-firefly">
-        <span className="sort-scan sort-scan-glow" />
-        <span className="sort-balls" style={{ filter: "url(#sort-goo)" }}>
-          <span className="sort-ball" />
-          <span className="sort-ball" />
-          <span className="sort-ball" />
-          <span className="sort-ball" />
-          <span className="sort-scan" />
-        </span>
+      <span className="sort-balls" style={{ filter: "url(#sort-goo)" }}>
+        <span className="sort-ball" />
+        <span className="sort-ball" />
+        <span className="sort-ball" />
+        <span className="sort-ball" />
+        <span className="sort-scan" />
       </span>
     </span>
   );
