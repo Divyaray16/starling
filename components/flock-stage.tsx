@@ -1,28 +1,55 @@
 "use client";
 
 import { MediaTile } from "@/components/media-tile";
-import { FLOCK_VISIBLE, flockLook } from "@/lib/flock";
+import { flockLayout, flockLook } from "@/lib/flock";
 import type { QueueItem } from "@/lib/types";
+import { useLayoutEffect, useRef, useState } from "react";
 
 export function FlockStage({
   items,
+  batchCount,
   dragOver,
   lifting,
   landed,
   breathing,
 }: {
   items: QueueItem[];
+  /** Readable files in this batch. The pile lays out for all of them. */
+  batchCount: number;
   dragOver: boolean;
   lifting: boolean;
   landed: boolean;
   breathing: boolean;
 }) {
-  const visible = items.slice(0, FLOCK_VISIBLE);
-  const hidden = Math.max(0, items.length - visible.length);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const [heldCount, setHeldCount] = useState(0);
+  const layoutCount = items.length === 0 ? 0 : Math.max(heldCount, items.length, batchCount);
+  if (layoutCount !== heldCount) setHeldCount(layoutCount);
+  const pileOpen = items.length > 0;
+
+  useLayoutEffect(() => {
+    const node = frameRef.current;
+    if (!node) return;
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      setBox((prev) =>
+        prev.w === rect.width && prev.h === rect.height ? prev : { w: rect.width, h: rect.height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [pileOpen]);
+
   const eyebrow = landed ? "Settled" : lifting ? "In the air" : "Unsorted";
   const title = landed ? "Landed" : lifting ? "Lifting" : "The pile";
+  const countNumber = items.length === 0 ? 0 : layoutCount;
   const count =
-    items.length === 0 ? null : items.length === 1 ? "1 together" : `${items.length} together`;
+    countNumber === 0 ? null : countNumber === 1 ? "1 together" : `${countNumber} together`;
+  const layout =
+    box.w > 0 && box.h > 0 && layoutCount > 0 ? flockLayout(layoutCount, box.w, box.h) : null;
 
   return (
     <section
@@ -47,7 +74,7 @@ export function FlockStage({
       </header>
 
       <div className="relative mx-4 mt-2 mb-4 flex min-h-0 flex-1 flex-col sm:mx-6 sm:mb-6" data-pile>
-        {visible.length === 0 ? (
+        {items.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6">
             {landed ? (
               <p className="max-w-xs text-center text-[15px] leading-relaxed text-[#4a524c]">
@@ -62,42 +89,39 @@ export function FlockStage({
             )}
           </div>
         ) : (
-          <div className="relative min-h-0 flex-1">
-            {visible.map((item, index) => {
-              const look = flockLook(item.id);
-              const breathePx = -3;
-              const breatheDuration = (2.8 + ((look.duration - 3.6) / 2.4) * 0.8).toFixed(2);
-              const breatheDelay = (look.delay + index * 0.17).toFixed(2);
-              return (
-                <div
-                  key={item.id}
-                  data-flock-id={item.id}
-                  data-breathe={breathing ? "true" : "false"}
-                  className="flock-tile absolute"
-                  style={{
-                    left: `${look.x}%`,
-                    top: `${look.y}%`,
-                    width: look.size,
-                    zIndex: look.z,
-                    transform: `translate(-50%, -50%) rotate(${look.tilt}deg)`,
-                    ["--drift-x" as string]: `${look.driftX}px`,
-                    ["--drift-y" as string]: `${look.driftY}px`,
-                    ["--drift-duration" as string]: `${look.duration}s`,
-                    ["--drift-delay" as string]: `${look.delay}s`,
-                    ["--breathe" as string]: `${breathePx}px`,
-                    ["--breathe-duration" as string]: `${breatheDuration}s`,
-                    ["--breathe-delay" as string]: `${breatheDelay}s`,
-                  }}
-                >
-                  <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
-                </div>
-              );
-            })}
-            {hidden > 0 ? (
-              <p className="absolute right-3 bottom-2 left-3 text-xs text-[#5f6a62]">
-                {visible.length} on screen, {items.length} in the pile.
-              </p>
-            ) : null}
+          <div ref={frameRef} className="relative min-h-0 flex-1" data-pile-cards={items.length}>
+            {layout
+              ? items.map((item, index) => {
+                  const look = flockLook(item.id, layout);
+                  const breathePx = -3;
+                  const breatheDuration = (2.8 + ((look.duration - 3.6) / 2.4) * 0.8).toFixed(2);
+                  const breatheDelay = (look.delay + index * 0.17).toFixed(2);
+                  return (
+                    <div
+                      key={item.id}
+                      data-flock-id={item.id}
+                      data-breathe={breathing ? "true" : "false"}
+                      className="flock-tile absolute"
+                      style={{
+                        left: `${look.x}%`,
+                        top: `${look.y}%`,
+                        width: look.size,
+                        zIndex: look.z,
+                        transform: `translate(-50%, -50%) rotate(${look.tilt}deg)`,
+                        ["--drift-x" as string]: `${look.driftX}px`,
+                        ["--drift-y" as string]: `${look.driftY}px`,
+                        ["--drift-duration" as string]: `${look.duration}s`,
+                        ["--drift-delay" as string]: `${look.delay}s`,
+                        ["--breathe" as string]: `${breathePx}px`,
+                        ["--breathe-duration" as string]: `${breatheDuration}s`,
+                        ["--breathe-delay" as string]: `${breatheDelay}s`,
+                      }}
+                    >
+                      <MediaTile src={item.thumbUrl} name={item.name} kind={item.kind} />
+                    </div>
+                  );
+                })
+              : null}
           </div>
         )}
       </div>

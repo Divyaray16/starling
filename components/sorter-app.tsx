@@ -16,10 +16,9 @@ import { classifyFramesWithFallback } from "@/lib/fallback-classifier";
 import {
   FLOCK_FLIGHT_MAX_MS,
   FLOCK_STAGGER_MS,
-  FLOCK_VISIBLE,
   flightDuration,
-  flockLook,
   flockReleaseCount,
+  flockTilt,
 } from "@/lib/flock";
 import {
   filesFromDataTransfer,
@@ -732,13 +731,14 @@ export function SorterApp() {
       const flights: Flight[] = [];
       const missed: Held[] = [];
       for (const entry of wave) {
+        const node = document.querySelector(`[data-flock-id="${CSS.escape(entry.item.id)}"]`);
         const from = measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`);
         const slot = measureSlot(entry.item.id);
-        if (!from || !slot) {
+        if (!from || !slot || !(node instanceof HTMLElement)) {
           missed.push(entry);
           continue;
         }
-        const look = flockLook(entry.item.id);
+        const size = node.offsetWidth || 78;
         flights.push({
           key: entry.item.id,
           runId: id,
@@ -746,9 +746,9 @@ export function SorterApp() {
           from,
           to: slot.center,
           delay: flights.length * FLOCK_STAGGER_MS,
-          tilt: look.tilt,
-          size: look.size,
-          dockScale: slot.width / look.size,
+          tilt: flockTilt(entry.item.id),
+          size,
+          dockScale: slot.width / size,
           layer: 40 + flights.length,
           duration: flightDuration(entry.item.id),
           categoryId: entry.hit.id,
@@ -778,9 +778,9 @@ export function SorterApp() {
 
     /**
      * The pile is ready and every file in this batch is labeled. Reserve the
-     * real row layout (full names, equal slots), then fly only the
-     * cards you can see, in waves, onto slots that are actually on screen.
-     * Everything else lands in its row without a flying node.
+     * real row layout (full names, equal slots), then fly the cards in waves
+     * onto slots that are actually on screen. Every file stays visible in
+     * the pile until its own wave leaves.
      */
     async function releaseFlock(entries: Held[]) {
       if (runId.current !== id || entries.length === 0) return;
@@ -808,15 +808,15 @@ export function SorterApp() {
       await nextPaint();
       if (runId.current !== id) return;
 
-      const onPile: Held[] = [];
-      const offPile: Held[] = [];
+      const queue: Held[] = [];
+      const unseen: Held[] = [];
       for (const entry of entries) {
         const shown = measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`);
-        if (shown && onPile.length < FLOCK_VISIBLE) onPile.push(entry);
-        else offPile.push(entry);
+        if (shown) queue.push(entry);
+        else unseen.push(entry);
       }
-      if (offPile.length > 0) {
-        commitLand(offPile);
+      if (unseen.length > 0) {
+        commitLand(unseen);
         await nextPaint();
         if (runId.current !== id) return;
       }
@@ -825,16 +825,17 @@ export function SorterApp() {
         Boolean(measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`)) &&
         slotVisible(entry.item.id);
 
-      let queue = onPile;
+      let pending = queue;
       let guard = 0;
-      while (queue.length > 0 && runId.current === id && guard < 40) {
+      const guardLimit = Math.max(48, entries.length * 2);
+      while (pending.length > 0 && runId.current === id && guard < guardLimit) {
         guard += 1;
-        if (!queue.some(onScreen)) {
-          const next = queue.find((entry) =>
+        if (!pending.some(onScreen)) {
+          const next = pending.find((entry) =>
             measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`),
           );
           if (!next) {
-            commitLand(queue);
+            commitLand(pending);
             break;
           }
           revealEarliestSlots([next]);
@@ -842,29 +843,29 @@ export function SorterApp() {
           await nextPaint();
           if (runId.current !== id) return;
           if (!moved && !onScreen(next)) {
-            commitLand(queue);
+            commitLand(pending);
             break;
           }
           continue;
         }
-        revealEarliestSlots(queue);
+        revealEarliestSlots(pending);
         await nextPaint();
         if (runId.current !== id) return;
-        const take = flockReleaseCount(queue.length, true);
+        const take = flockReleaseCount(pending.length, true);
         const wave: Held[] = [];
         const later: Held[] = [];
-        for (const entry of queue) {
+        for (const entry of pending) {
           if (wave.length < take && onScreen(entry)) wave.push(entry);
           else later.push(entry);
         }
         if (wave.length === 0) {
-          commitLand(queue);
+          commitLand(pending);
           break;
         }
         await launchWave(wave);
-        queue = later;
+        pending = later;
       }
-      if (queue.length > 0 && runId.current === id) commitLand(queue);
+      if (pending.length > 0 && runId.current === id) commitLand(pending);
     }
 
     const acceptLabel = (item: QueueItem, hit: LabelHit | null) => {
@@ -1112,6 +1113,7 @@ export function SorterApp() {
     >
       <FlockStage
         items={state.pile}
+        batchCount={Math.max(0, state.total - state.landed - state.unreadable)}
         dragOver={dragOver}
         lifting={lifting}
         landed={(settled || pileClear) && state.pile.length === 0 && !lifting}

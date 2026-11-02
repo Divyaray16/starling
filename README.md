@@ -6,7 +6,7 @@ When the flock has settled, open a category to see its photos and videos, or dow
 
 ## The flock
 
-A batch — a folder, a drop, or the sample — is decoded onto the pile first, including HEIC. Nothing in that batch is labeled or flown until every file from it is on the pile. Then the visible cards leave together. Departures in a wave are about 10 milliseconds apart. Each flight is one smooth arc of about 320–420 milliseconds. A large folder draws at most 24 cards and flies them in waves of about 12; every file still lands in a row, and the count includes the whole batch. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there. Files already landed stay where they are when another batch is added.
+A batch — a folder, a drop, or the sample — is decoded onto the pile first, including HEIC. Nothing in that batch is labeled or flown until every file from it is on the pile. Every file is a card in that pile. They leave in waves of about 12: departures in a wave are about 10 milliseconds apart, and each flight is one smooth arc of about 320–420 milliseconds. Cards still waiting stay visible. The count is the whole batch. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there. Files already landed stay where they are when another batch is added.
 
 If the browser asks for reduced motion, Starling skips the flight and shows the settled board.
 
@@ -58,5 +58,5 @@ The clip is a one-second view of the Shibuya photograph so the video path can be
 
 - HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
 - The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload. The empty page paints before that download starts.
-- A very large folder shows a dense pile of at most 24 cards, plus the real count. Those cards fly in waves of about 12. Every file still lands in a category row.
+- A large folder shows every file as a card in one pile. The cards overlap, and they fly in waves of about 12. Every file lands in a category row. The count is the whole batch.
 - The folder control opens the system directory picker. Loose files still add by dropping them on the pile. HEIC and HEIF are included either way.
