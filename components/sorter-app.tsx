@@ -32,7 +32,6 @@ import { loadSampleFolder } from "@/lib/sample-folder";
 import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { Check, Download, Folder, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
@@ -1146,16 +1145,11 @@ export function SorterApp() {
                 <Button
                   type="button"
                   size="lg"
-                  className="h-11 gap-1.5 rounded-2xl px-4"
+                  className="h-11 rounded-2xl px-[23px]"
                   onClick={onDownload}
                   disabled={zipping}
                   data-download-label={downloadLabel}
                 >
-                  {downloadSaved ? (
-                    <Check data-icon="inline-start" className="size-4" />
-                  ) : (
-                    <Download data-icon="inline-start" className="size-4" />
-                  )}
                   <span className="inline-grid">
                     <span
                       className={`col-start-1 row-start-1 ${zipping || downloadSaved ? "invisible" : ""}`}
@@ -1195,7 +1189,7 @@ export function SorterApp() {
                 data-folder-picker
                 className={cn(
                   buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                  "media-picker h-11 cursor-pointer gap-1.5 rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+                  "media-picker h-11 cursor-pointer rounded-2xl px-[23px] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                   settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
                 )}
                 onDragOverCapture={(event) => {
@@ -1208,7 +1202,6 @@ export function SorterApp() {
                   void onDrop(event);
                 }}
               >
-                <Folder data-icon="inline-start" className="pointer-events-none size-4" aria-hidden="true" />
                 <span className="pointer-events-none">Choose files or folder</span>
                 <input
                   id="folder-file-input"
@@ -1227,10 +1220,9 @@ export function SorterApp() {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="h-10 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3.5 text-[#3c443e]"
+                  className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-[22px] text-[#3c443e]"
                   onClick={resetBoard}
                 >
-                  <RefreshCw data-icon="inline-start" className="size-4" />
                   Sort another set
                 </Button>
               ) : null}

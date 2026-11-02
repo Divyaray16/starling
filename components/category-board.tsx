@@ -3,7 +3,7 @@
 import { MediaTile } from "@/components/media-tile";
 import { Button } from "@/components/ui/button";
 import type { CategoryRow, LandedTile } from "@/lib/types";
-import { ArrowUpRight, X } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -421,10 +421,9 @@ function CategoryGrid({
       <Button
         type="button"
         variant="outline"
-        className="h-10 gap-1.5 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-3 text-[#3c443e]"
+        className="h-10 rounded-2xl border-[#c9d4c6] bg-[#f3f5ef] px-[21px] text-[#3c443e]"
         onClick={onClose}
       >
-        <X data-icon="inline-start" className="size-4" />
         Close
       </Button>
       <h2 className="mt-5 text-[2.2rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e]">
