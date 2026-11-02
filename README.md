@@ -6,7 +6,7 @@ When the flock has settled, open a category to see its photos and videos, or dow
 
 ## The flock
 
-A batch — Choose files, Choose a folder, a drop, or the sample — is decoded onto the pile first, including HEIC. Nothing in that batch is labeled or flown until every file from it is on the pile. Then the flock lifts together. Departures are about 10 milliseconds apart. Each flight lasts about a third of a second, easing on a curve (a quick lift, a slight lean, a small scale settle) rather than a straight slide. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there. Files already landed stay where they are when another batch is added.
+A batch — Choose files, Choose a folder, a drop, or the sample — is decoded onto the pile first, including HEIC. Nothing in that batch is labeled or flown until every file from it is on the pile. Then the visible cards leave together. Departures in a wave are about 10 milliseconds apart. Each flight is one smooth arc of about 320–420 milliseconds. A large folder draws at most 24 cards and flies them in waves of about 12; every file still lands in a row, and the count includes the whole batch. A category row warms briefly as a tile docks, and the counts tick up as they land. A category is shown only when at least one file belongs there. Files already landed stay where they are when another batch is added.
 
 If the browser asks for reduced motion, Starling skips the flight and shows the settled board.
 
@@ -30,7 +30,7 @@ npm start
 
 ## What stays in the browser
 
-Choose photos and videos with **Choose files**. It is a normal multi-file input (`image/*`, `video/*`, plus `.heic` and `.heif`). You can also drop files onto the pile. A separate folder control is there for browsers that allow a directory picker; it does not sit on top of the file control. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
+**Choose files or folder** is a directory picker (`webkitdirectory`). Choosing a folder returns the images and videos inside it, including HEIC. **or choose files** is a normal multi-file input for loose photos and videos. You can also drop files or a folder onto the pile. Canceling either dialog leaves the session as it is. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
 
 Photos (JPEG, PNG, WebP, GIF, HEIC, HEIF) and videos (MP4, WebM, MOV) can share a category. HEIC and HEIF are decoded in this browser with [libheif](https://github.com/strukturag/libheif) (the `libheif-js` wasm build) to a bitmap, drawn to a canvas, and then labeled the same way as a JPEG. The zip still contains the original HEIC. A video is labeled from three frames — near the start, the middle, and the end, when the clip is long enough to tell them apart. Those scores are combined so one odd frame does not decide. The thumbnail is the middle frame. Each tile is badged Photo or Video. A file that cannot be decoded is named on its own; the rest of the folder still sorts. Other files that are not photos or videos are skipped, and the page says how many.
 
@@ -58,5 +58,5 @@ The clip is a one-second view of the Shibuya photograph so the video path can be
 
 - HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
 - The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload. The empty page paints before that download starts.
-- A very large folder shows a dense sample of the cloud (72 tiles) plus the real count. The batch is on the pile before it lifts, and the flock leaves together rather than one file at a time.
-- The file control opens the system file dialog for photos and videos, including HEIC and HEIF. You can also drop files on the pile. The folder control is separate and only helps when the browser allows choosing a directory.
+- A very large folder shows a dense pile of at most 24 cards, plus the real count. Those cards fly in waves of about 12. Every file still lands in a category row.
+- The folder control opens the system directory picker. Loose files still add through **or choose files**, or by dropping them on the pile. HEIC and HEIF are included either way.

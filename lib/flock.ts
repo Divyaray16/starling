@@ -1,25 +1,31 @@
 /**
- * A batch sits together on the pile until every file in it is ready, then
- * lifts as one flock. Departures are about 8–12ms apart, so the tiles share
- * the air instead of leaving one at a time. Each flight is a short curve,
- * about 280–380ms.
+ * The pile draws at most FLOCK_VISIBLE cards. Once the batch is ready, those
+ * visible cards leave in waves of about FLOCK_WAVE: one short arc each, with
+ * departures about 10ms apart. A wave lasts about 320–420ms. Files past the
+ * visible cloud still land in the rows; they do not each get a flying node.
  */
 export const FLOCK_STAGGER_MS = 10;
-export const FLOCK_FLIGHT_MIN_MS = 280;
-export const FLOCK_FLIGHT_MAX_MS = 380;
+export const FLOCK_FLIGHT_MIN_MS = 320;
+export const FLOCK_FLIGHT_MAX_MS = 420;
 /** Center of the flight range, used when a single duration is needed. */
-export const FLOCK_FLIGHT_MS = 330;
+export const FLOCK_FLIGHT_MS = 380;
+/** Cards drawn in the pile. The rest of a large batch stay in the count. */
+export const FLOCK_VISIBLE = 24;
+/** Flying cards in one wave. Keeps the air from stacking into one blob. */
+export const FLOCK_WAVE = 12;
 
-/** The whole labeled batch leaves together. Nothing flies before the batch is ready. */
+/**
+ * How many labeled files may leave in the next wave.
+ * Nothing flies before the batch is ready.
+ */
 export function flockReleaseCount(held: number, producerDone: boolean): number {
   if (held <= 0 || !producerDone) return 0;
-  return held;
+  return Math.min(FLOCK_WAVE, held);
 }
 
-/** Stable flight length inside the 280–380ms range, so a flock is not a metronome. */
+/** Stable flight length inside 320–420ms, tight enough that a wave arrives together. */
 export function flightDuration(id: string): number {
-  const span = FLOCK_FLIGHT_MAX_MS - FLOCK_FLIGHT_MIN_MS;
-  return FLOCK_FLIGHT_MIN_MS + Math.round(unit(hash(id), 12) * span);
+  return 360 + Math.round(unit(hash(id), 12) * 50);
 }
 
 export type FlockLook = {
@@ -52,20 +58,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Stable cloud placement. Positions come from the id, so a departure does not shove the rest. */
+/**
+ * Stable cloud placement. Positions come from the id, so a departure does not
+ * shove the rest. Cards fill a disk (denser toward the middle) instead of a
+ * hollow ring, so a couple of dozen read as one pile.
+ */
 export function flockLook(id: string): FlockLook {
   const h = hash(id);
   const angle = unit(h, 1) * Math.PI * 2;
-  const ring = 0.55 + unit(h, 2) * 0.45;
+  const ring = Math.sqrt(unit(h, 2));
   return {
-    x: clamp(50 + Math.cos(angle) * 22 * ring, 28, 72),
-    y: clamp(48 + Math.sin(angle) * 18 * ring, 30, 70),
-    tilt: unit(h, 3) * 18 - 9,
-    size: 72 + Math.round(unit(h, 4) * 16),
-    driftX: unit(h, 5) * 14 - 7,
-    driftY: unit(h, 6) * 12 - 6,
+    x: clamp(50 + Math.cos(angle) * 17 * ring, 30, 70),
+    y: clamp(50 + Math.sin(angle) * 15 * ring, 32, 70),
+    tilt: unit(h, 3) * 14 - 7,
+    size: 70 + Math.round(unit(h, 4) * 16),
+    driftX: unit(h, 5) * 6 - 3,
+    driftY: unit(h, 6) * 5 - 2.5,
     duration: 3.6 + unit(h, 7) * 2.4,
     delay: -unit(h, 8) * 4.5,
-    z: 1 + Math.floor(unit(h, 9) * 6),
+    z: 1 + Math.floor(unit(h, 9) * 8),
   };
 }

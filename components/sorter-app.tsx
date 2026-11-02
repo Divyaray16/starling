@@ -16,6 +16,7 @@ import { classifyFramesWithFallback } from "@/lib/fallback-classifier";
 import {
   FLOCK_FLIGHT_MAX_MS,
   FLOCK_STAGGER_MS,
+  FLOCK_VISIBLE,
   flightDuration,
   flockLook,
   flockReleaseCount,
@@ -48,7 +49,6 @@ type Flight = {
   delay: number;
   tilt: number;
   size: number;
-  weave: number;
   dockScale: number;
   layer: number;
   duration: number;
@@ -79,6 +79,8 @@ type SorterState = {
   mode: ClassifierMode | null;
   error: string | null;
   notice: string | null;
+  /** True from the first departure until the batch has finished landing. */
+  releasing: boolean;
 };
 
 const MEDIA_ACCEPT = [
@@ -117,6 +119,7 @@ const EMPTY: SorterState = {
   mode: null,
   error: null,
   notice: null,
+  releasing: false,
 };
 
 function prefersReducedMotion() {
@@ -215,6 +218,65 @@ function measureCenter(selector: string): Point | null {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
+/** A slot we can fly to: on screen, and fully inside its strip when it has one. */
+function slotVisible(slotId: string): boolean {
+  const node = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
+  if (!(node instanceof HTMLElement)) return false;
+  const rect = node.getBoundingClientRect();
+  if (rect.width < 8 || rect.height < 8) return false;
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const board = document.querySelector("[data-board-scroll]");
+  const view =
+    board instanceof HTMLElement
+      ? board.getBoundingClientRect()
+      : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+  if (cy < view.top + 6 || cy > view.bottom - 6) return false;
+  if (cx < view.left + 4 || cx > view.right - 4) return false;
+  const strip = node.closest("[data-dock]");
+  if (strip instanceof HTMLElement) {
+    const bounds = strip.getBoundingClientRect();
+    if (cx < bounds.left + 4 || cx > bounds.right - 4) return false;
+    if (cy < bounds.top - 2 || cy > bounds.bottom + 2) return false;
+  }
+  return true;
+}
+
+/**
+ * Slide a category strip so its earliest still-flying card is in view.
+ * Covers sit outside the strip. Does not scroll the page.
+ */
+/** Bring a below-the-fold slot into the board. Returns whether the scroller moved. */
+function scrollSlotIntoBoard(slotId: string): boolean {
+  const node = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
+  const scroller = document.querySelector("[data-board-scroll]");
+  if (!(node instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return false;
+  const rect = node.getBoundingClientRect();
+  const view = scroller.getBoundingClientRect();
+  if (rect.top >= view.top + 8 && rect.bottom <= view.bottom - 8) return false;
+  const before = scroller.scrollTop;
+  scroller.scrollTop += rect.top - view.top - 12;
+  return Math.abs(scroller.scrollTop - before) > 1;
+}
+
+function revealEarliestSlots(queue: Held[]) {
+  const seen = new Set<string>();
+  for (const entry of queue) {
+    if (seen.has(entry.hit.id)) continue;
+    seen.add(entry.hit.id);
+    const earliest = queue.find((other) => other.hit.id === entry.hit.id);
+    if (!earliest || slotVisible(earliest.item.id)) continue;
+    const node = document.querySelector(`[data-dock-slot="${CSS.escape(earliest.item.id)}"]`);
+    if (!(node instanceof HTMLElement)) continue;
+    const strip = node.closest("[data-dock]");
+    if (!(strip instanceof HTMLElement)) continue;
+    const nodeRect = node.getBoundingClientRect();
+    const stripRect = strip.getBoundingClientRect();
+    const delta = nodeRect.left - stripRect.left - 6;
+    if (Math.abs(delta) > 1) strip.scrollLeft += delta;
+  }
+}
+
 function measureSlot(slotId: string): { center: Point; width: number } | null {
   const element = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
   if (!(element instanceof HTMLElement)) return null;
@@ -226,23 +288,6 @@ function measureSlot(slotId: string): { center: Point; width: number } | null {
   };
 }
 
-/** Keep a late slot inside the strip before it is measured, without scrolling the page. */
-function revealStripSlot(slotId: string) {
-  const node = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
-  if (!(node instanceof HTMLElement)) return;
-  const strip = node.closest("[data-dock]");
-  if (!(strip instanceof HTMLElement)) return;
-  const nodeRect = node.getBoundingClientRect();
-  const stripRect = strip.getBoundingClientRect();
-  const pad = 8;
-  if (nodeRect.right > stripRect.right - pad) {
-    strip.scrollLeft += nodeRect.right - (stripRect.right - pad);
-  } else if (nodeRect.left < stripRect.left + pad) {
-    strip.scrollLeft -= stripRect.left + pad - nodeRect.left;
-  }
-}
-
-const DOCK_TILE_PX = 76;
 const SAVED_FLASH_MS = 2000;
 
 /** Manual correction. The original file moves with the tile; nothing is reclassified. */
@@ -540,6 +585,7 @@ export function SorterApp() {
               modelLine: null,
               modelRatio: null,
               error: "The sort stopped before the flock could land.",
+              releasing: false,
             }
           : current,
       );
@@ -577,6 +623,7 @@ export function SorterApp() {
         ...current,
         phase: "done",
         flights: [],
+        releasing: false,
         modelLine: null,
         modelRatio: null,
         categories: categories.filter((category) => category.items.length > 0),
@@ -681,73 +728,59 @@ export function SorterApp() {
       );
     }
 
+    function commitLand(list: Held[]) {
+      if (list.length === 0 || runId.current !== id) return;
+      const ids = new Set(list.map((entry) => entry.item.id));
+      for (const itemId of ids) removed.add(itemId);
+      setState((current) => {
+        if (runId.current !== id) return current;
+        let categories = current.categories;
+        for (const entry of list) {
+          categories = withLanded(categories, entry.hit.id, entry.hit.name, entry.item);
+        }
+        const added = countItems(categories) - countItems(current.categories);
+        return {
+          ...current,
+          categories,
+          pile: current.pile.filter((item) => !ids.has(item.id)),
+          landed: current.landed + added,
+        };
+      });
+    }
+
+    /** Fly one wave onto slots that were already laid out and measured. */
     async function launchWave(wave: Held[]): Promise<void> {
       if (runId.current !== id || wave.length === 0) return;
-      const ids = new Set(wave.map((entry) => entry.item.id));
-      for (const itemId of ids) removed.add(itemId);
-
-      if (prefersReducedMotion()) {
-        setState((current) => {
-          if (runId.current !== id) return current;
-          let categories = withShells(current.categories, wave);
-          for (const entry of wave) {
-            categories = withLanded(categories, entry.hit.id, entry.hit.name, entry.item);
-          }
-          const added = countItems(categories) - countItems(current.categories);
-          return {
-            ...current,
-            categories,
-            pile: current.pile.filter((item) => !ids.has(item.id)),
-            landed: current.landed + added,
-          };
-        });
-        return;
-      }
-
-      setState((current) =>
-        runId.current === id
-          ? { ...current, categories: withReservations(withShells(current.categories, wave), wave) }
-          : current,
-      );
-      await nextPaint();
-      if (runId.current !== id) return;
-      const slotIds = wave.map((entry) => entry.item.id);
-      revealDocks(slotIds);
-      for (const slotId of slotIds) revealStripSlot(slotId);
-      await nextPaint();
-      if (runId.current !== id) return;
-
-      const stage = measureCenter("[data-flock-stage]");
-      const flights: Flight[] = wave.map((entry, index) => {
-        const look = flockLook(entry.item.id);
-        const from =
-          measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`) ??
-          (stage ? { x: stage.x, y: stage.y } : { x: 140, y: 200 });
+      const flights: Flight[] = [];
+      const missed: Held[] = [];
+      for (const entry of wave) {
+        const from = measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`);
         const slot = measureSlot(entry.item.id);
-        const to = slot?.center ??
-          measureCenter(`[data-dock="${CSS.escape(entry.hit.id)}"]`) ?? {
-            x: Math.min(window.innerWidth * 0.72, window.innerWidth - 80),
-            y: Math.min(window.innerHeight * 0.62, window.innerHeight - 80),
-          };
-        const dockWidth = slot?.width ?? DOCK_TILE_PX;
-        return {
+        if (!from || !slot) {
+          missed.push(entry);
+          continue;
+        }
+        const look = flockLook(entry.item.id);
+        flights.push({
           key: entry.item.id,
           runId: id,
           item: entry.item,
           from,
-          to,
-          delay: index * FLOCK_STAGGER_MS,
+          to: slot.center,
+          delay: flights.length * FLOCK_STAGGER_MS,
           tilt: look.tilt,
           size: look.size,
-          weave: Math.round(look.tilt * 0.65),
-          dockScale: dockWidth / look.size,
-          layer: 40 + index,
+          dockScale: slot.width / look.size,
+          layer: 40 + flights.length,
           duration: flightDuration(entry.item.id),
           categoryId: entry.hit.id,
           categoryName: entry.hit.name,
-        };
-      });
-
+        });
+      }
+      if (missed.length > 0) commitLand(missed);
+      if (flights.length === 0 || runId.current !== id) return;
+      const ids = new Set(flights.map((flight) => flight.item.id));
+      for (const itemId of ids) removed.add(itemId);
       const landedWait = waitForLandings(
         flights.map((flight) => flight.key),
         id,
@@ -756,12 +789,104 @@ export function SorterApp() {
         runId.current === id
           ? {
               ...current,
+              releasing: true,
               flights: [...current.flights, ...flights],
               pile: current.pile.filter((item) => !ids.has(item.id)),
             }
           : current,
       );
       await landedWait;
+    }
+
+    /**
+     * The pile is ready and every file in this batch is labeled. Reserve the
+     * real row layout (full names, covers, small slots), then fly only the
+     * cards you can see, in waves, onto slots that are actually on screen.
+     * Everything else lands in its row without a flying node.
+     */
+    async function releaseFlock(entries: Held[]) {
+      if (runId.current !== id || entries.length === 0) return;
+      for (const entry of entries) removed.add(entry.item.id);
+
+      if (prefersReducedMotion()) {
+        commitLand(entries);
+        return;
+      }
+
+      setState((current) =>
+        runId.current === id
+          ? {
+              ...current,
+              categories: withReservations(withShells(current.categories, entries), entries),
+            }
+          : current,
+      );
+      await nextPaint();
+      if (runId.current !== id) return;
+      document.querySelectorAll("[data-dock]").forEach((node) => {
+        if (node instanceof HTMLElement) node.scrollLeft = 0;
+      });
+      revealDocks(entries.map((entry) => entry.item.id));
+      await nextPaint();
+      if (runId.current !== id) return;
+
+      const onPile: Held[] = [];
+      const offPile: Held[] = [];
+      for (const entry of entries) {
+        const shown = measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`);
+        if (shown && onPile.length < FLOCK_VISIBLE) onPile.push(entry);
+        else offPile.push(entry);
+      }
+      if (offPile.length > 0) {
+        commitLand(offPile);
+        await nextPaint();
+        if (runId.current !== id) return;
+      }
+
+      const onScreen = (entry: Held) =>
+        Boolean(measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`)) &&
+        slotVisible(entry.item.id);
+
+      let queue = onPile;
+      let guard = 0;
+      while (queue.length > 0 && runId.current === id && guard < 40) {
+        guard += 1;
+        if (!queue.some(onScreen)) {
+          const next = queue.find((entry) =>
+            measureCenter(`[data-flock-id="${CSS.escape(entry.item.id)}"]`),
+          );
+          if (!next) {
+            commitLand(queue);
+            break;
+          }
+          revealEarliestSlots([next]);
+          const moved = scrollSlotIntoBoard(next.item.id);
+          await nextPaint();
+          if (runId.current !== id) return;
+          if (!moved && !onScreen(next)) {
+            commitLand(queue);
+            break;
+          }
+          continue;
+        }
+        revealEarliestSlots(queue);
+        await nextPaint();
+        if (runId.current !== id) return;
+        const take = flockReleaseCount(queue.length, true);
+        const wave: Held[] = [];
+        const later: Held[] = [];
+        for (const entry of queue) {
+          if (wave.length < take && onScreen(entry)) wave.push(entry);
+          else later.push(entry);
+        }
+        if (wave.length === 0) {
+          commitLand(queue);
+          break;
+        }
+        await launchWave(wave);
+        queue = later;
+      }
+      if (queue.length > 0 && runId.current === id) commitLand(queue);
     }
 
     const acceptLabel = (item: QueueItem, hit: LabelHit | null) => {
@@ -854,20 +979,13 @@ export function SorterApp() {
       }
     })();
 
-    const pendingFlights: Promise<void>[] = [];
     const consumer = (async () => {
-      while (runId.current === id) {
-        const take = flockReleaseCount(held.length, producerDone);
-        if (take > 0) {
-          const wave = held.splice(0, take);
-          pendingFlights.push(launchWave(wave));
-          await sleep(FLOCK_STAGGER_MS);
-          continue;
-        }
-        if (producerDone) break;
+      while (runId.current === id && !producerDone) {
         await sleep(16);
       }
-      await Promise.all(pendingFlights);
+      if (runId.current !== id) return;
+      const ready = held.splice(0, held.length);
+      await releaseFlock(ready);
     })();
 
     await Promise.all([preparing, producer, consumer]);
@@ -978,7 +1096,7 @@ export function SorterApp() {
   const settled = state.phase === "done" && fileCount > 0;
   const finishedEmpty = state.phase === "done" && fileCount === 0;
   const sorting = state.phase === "sorting";
-  const lifting = state.flights.length > 0;
+  const lifting = state.flights.length > 0 || state.releasing;
   const readCount = state.labeled + state.unreadable;
   const intakeOpen =
     state.modelLine !== null ||
@@ -1003,7 +1121,8 @@ export function SorterApp() {
     state.total > 0 &&
     readCount >= state.total &&
     state.modelLine === null;
-  const breathing = Boolean(statusLine?.startsWith("Sorting the pile"));
+  const showSortFlock = Boolean(statusLine?.startsWith("Sorting the pile"));
+  const breathing = showSortFlock;
   const downloadLabel = downloadSaved ? "Saved" : zipping ? "Packing folders…" : "Download folders";
 
   return (
@@ -1102,15 +1221,12 @@ export function SorterApp() {
           <div className={cn("max-w-lg", settled || finishedEmpty ? "mt-6" : "mt-7")}>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <label
+                data-folder-picker
                 className={cn(
                   buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
                   "media-picker h-11 cursor-pointer rounded-2xl px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
                   settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
                 )}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  folderInputRef.current?.click();
-                }}
                 onDragOverCapture={(event) => {
                   event.preventDefault();
                   setDragOver(true);
@@ -1123,12 +1239,26 @@ export function SorterApp() {
               >
                 <span className="pointer-events-none">Choose files or folder</span>
                 <input
+                  id="folder-file-input"
+                  ref={setFolderInput}
+                  type="file"
+                  name="folder"
+                  multiple
+                  aria-label="Choose files or folder"
+                  className="media-picker-input"
+                  onChange={onDirectory}
+                  {...{ webkitdirectory: "", directory: "" }}
+                />
+              </label>
+              <label className="quiet-file-choice" data-file-picker>
+                <span className="pointer-events-none">or choose files</span>
+                <input
                   id="photo-file-input"
                   type="file"
                   name="photos"
                   multiple
                   accept={MEDIA_ACCEPT}
-                  aria-label="Choose files or folder"
+                  aria-label="Choose files"
                   className="media-picker-input"
                   onChange={onFiles}
                 />
@@ -1153,26 +1283,17 @@ export function SorterApp() {
                 Try a sample folder
               </button>
             </div>
-            {/* Chrome cannot return loose files and a directory from one dialog.
-                This input stays unlabeled; right-click on the button opens it. */}
-            <input
-              id="folder-file-input"
-              ref={setFolderInput}
-              type="file"
-              name="folder"
-              multiple
-              tabIndex={-1}
-              aria-hidden="true"
-              className="picker-folder-input"
-              onChange={onDirectory}
-              {...{ webkitdirectory: "", directory: "" }}
-            />
           </div>
 
           {sorting && statusLine ? (
             <div className="mt-6 max-w-lg">
-              <p className="text-sm text-[#5a645c]" aria-live="polite" data-status-line={statusLine}>
-                {statusLine}
+              <p
+                className="status-line text-sm text-[#5a645c]"
+                aria-live="polite"
+                data-status-line={statusLine}
+              >
+                {showSortFlock ? <SortFlock /> : null}
+                <span>{statusLine}</span>
               </p>
             </div>
           ) : null}
@@ -1193,7 +1314,7 @@ export function SorterApp() {
             decodeFailures={state.decodeFailures}
           />
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto" data-board-scroll>
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-board-scroll>
           <CategoryBoard
             categories={state.categories}
             settled={settled}
@@ -1216,7 +1337,6 @@ export function SorterApp() {
           delay={flight.delay}
           tilt={flight.tilt}
           size={flight.size}
-          weave={flight.weave}
           dockScale={flight.dockScale}
           layer={flight.layer}
           duration={flight.duration}
@@ -1224,6 +1344,18 @@ export function SorterApp() {
         />
       ))}
     </div>
+  );
+}
+
+/** Four squares that lift and settle beside "Sorting the pile". */
+function SortFlock() {
+  return (
+    <span className="sort-flock" data-sort-flock="4" aria-hidden="true">
+      <span className="sort-mark" />
+      <span className="sort-mark" />
+      <span className="sort-mark" />
+      <span className="sort-mark" />
+    </span>
   );
 }
 

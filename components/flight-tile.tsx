@@ -10,9 +10,10 @@ import { useEffect, useRef } from "react";
  * the curve itself does not kink or hook past the landing point. Motion is
  * translate3d / rotate / scale only, so the flight stays on the compositor.
  */
-const EASE_X1 = 0.22;
-const EASE_Y1 = 0.68;
-const EASE_X2 = 0.18;
+/** Ease-out that arrives with zero slope, so the dock does not kick. */
+const EASE_X1 = 0.16;
+const EASE_Y1 = 0.84;
+const EASE_X2 = 0.28;
 const EASE_Y2 = 1;
 
 function cubicBezier(t: number, x1: number, y1: number, x2: number, y2: number): number {
@@ -43,39 +44,21 @@ function quad(a: number, b: number, c: number, t: number) {
   return u * u * a + 2 * u * t * b + t * t * c;
 }
 
-/** Zero slope at both ends, so the lean eases instead of kicking. */
-function smoothstep(t: number) {
-  return t * t * (3 - 2 * t);
-}
-
-function bell(t: number) {
-  const s = Math.sin(Math.PI * t);
-  return s * s;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
 /** Matches MediaTile: 4px padding and a 4:5 picture. */
 function tileHeight(width: number) {
   return (width - 8) * 1.25 + 8;
 }
 
 /**
- * A gentle bow above the straight line. The control point stays inside the
- * span of the trip, so the path cannot hook back past the dock.
+ * One quadratic bow. The control point sits on the chord's midpoint, lifted
+ * above it, so the path is a single smooth arc and cannot kink or hook past
+ * the dock.
  */
-function arcControl(from: Point, to: Point, weave: number): Point {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.hypot(dx, dy);
-  const arc = Math.min(72, 44 + dist * 0.035);
-  const side = clamp(weave, -8, 8);
-  const minX = Math.min(from.x, to.x);
-  const maxX = Math.max(from.x, to.x);
+function arcControl(from: Point, to: Point): Point {
+  const dist = Math.hypot(to.x - from.x, to.y - from.y);
+  const arc = Math.min(56, Math.max(16, dist * 0.06));
   return {
-    x: clamp((from.x + to.x) / 2 + side, minX - 8, maxX + 8),
+    x: (from.x + to.x) / 2,
     y: (from.y + to.y) / 2 - arc,
   };
 }
@@ -89,7 +72,6 @@ export function FlightTile({
   delay,
   tilt,
   size,
-  weave,
   dockScale,
   layer,
   duration = FLOCK_FLIGHT_MS,
@@ -103,7 +85,6 @@ export function FlightTile({
   delay: number;
   tilt: number;
   size: number;
-  weave: number;
   dockScale: number;
   layer: number;
   duration?: number;
@@ -123,11 +104,9 @@ export function FlightTile({
     let frame = 0;
     let finished = false;
     const start = performance.now();
-    const control = arcControl(from, to, weave);
+    const control = arcControl(from, to);
     const halfW = size / 2;
     const halfH = height / 2;
-    const direction = to.x >= from.x ? 1 : -1;
-    const lean = direction * (3.5 + Math.min(1.5, Math.abs(weave) * 0.2));
 
     const place = (x: number, y: number, rotation: number, scale: number) => {
       element.style.transform = `translate3d(${x - halfW}px, ${y - halfH}px, 0) rotate(${rotation}deg) scale(${scale})`;
@@ -148,11 +127,11 @@ export function FlightTile({
         return;
       }
       const t = Math.min(1, elapsed / duration);
-      const eased = flightEase(t);
+      const eased = t >= 1 ? 1 : flightEase(t);
       const x = quad(from.x, control.x, to.x, eased);
       const y = quad(from.y, control.y, to.y, eased);
-      const rotation = tilt * (1 - smoothstep(eased)) + lean * bell(eased);
-      const scale = 1 + (dockScale - 1) * smoothstep(eased) + bell(eased) * 0.03;
+      const rotation = tilt * (1 - eased);
+      const scale = 1 + (dockScale - 1) * eased;
       place(x, y, rotation, scale);
       if (t < 1) {
         frame = requestAnimationFrame(tick);
@@ -165,12 +144,13 @@ export function FlightTile({
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [delay, dockScale, duration, from, height, size, tilt, to, weave]);
+  }, [delay, dockScale, duration, from, height, size, tilt, to]);
 
   return (
     <div
       ref={tileRef}
       data-flight
+      data-flight-name={name}
       aria-hidden
       className="flight-tile pointer-events-none fixed top-0 left-0"
       style={{

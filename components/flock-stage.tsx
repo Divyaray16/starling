@@ -1,10 +1,8 @@
 "use client";
 
 import { MediaTile } from "@/components/media-tile";
-import { flockLook } from "@/lib/flock";
+import { FLOCK_VISIBLE, flockLook } from "@/lib/flock";
 import type { QueueItem } from "@/lib/types";
-
-const VISIBLE_CLOUD = 72;
 
 export function FlockStage({
   items,
@@ -19,7 +17,7 @@ export function FlockStage({
   landed: boolean;
   breathing: boolean;
 }) {
-  const visible = items.slice(0, VISIBLE_CLOUD);
+  const visible = items.slice(0, FLOCK_VISIBLE);
   const hidden = Math.max(0, items.length - visible.length);
   const eyebrow = landed ? "Settled" : lifting ? "In the air" : "Unsorted";
   const title = landed ? "Landed" : lifting ? "Lifting" : "The pile";
@@ -48,38 +46,26 @@ export function FlockStage({
         {count ? <p className="text-sm text-[#5f6a62] tabular-nums">{count}</p> : null}
       </header>
 
-      <div
-        className="pile-tray mx-4 mt-2 mb-4 flex min-h-0 flex-1 flex-col p-3 sm:mx-6 sm:mb-6 sm:p-4"
-        data-pile-tray
-      >
+      <div className="relative mx-4 mt-2 mb-4 flex min-h-0 flex-1 flex-col sm:mx-6 sm:mb-6" data-pile>
         {visible.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center px-4">
-            <div className="max-w-xs text-center">
-              {landed ? (
-                <p className="text-[15px] leading-relaxed text-[#4a524c]">
-                  The pile lifted together. It is in the rows now.
-                </p>
-              ) : lifting ? (
-                <p className="sr-only">The flock is in the air.</p>
-              ) : (
-                <>
-                  <div className="mx-auto mb-6 flex h-28 items-end justify-center" aria-hidden>
-                    <span className="block h-16 w-12 -translate-y-1 -rotate-12 bg-[#f4f6f1] shadow-[0_12px_24px_rgba(70,90,75,0.12)]" />
-                    <span className="z-10 -mx-3 block h-24 w-16 -rotate-2 bg-[#f7f8f4] shadow-[0_16px_30px_rgba(70,90,75,0.14)]" />
-                    <span className="block h-[4.5rem] w-12 translate-y-1 rotate-6 bg-[#f4f6f1] shadow-[0_12px_24px_rgba(70,90,75,0.12)]" />
-                  </div>
-                  <p className="text-[15px] leading-relaxed text-[#4a524c]">
-                    Drop photos and videos here. They wait as one pile, then lift together.
-                  </p>
-                </>
-              )}
-            </div>
+          <div className="flex flex-1 items-center justify-center px-6">
+            {landed ? (
+              <p className="max-w-xs text-center text-[15px] leading-relaxed text-[#4a524c]">
+                The pile lifted together. It is in the rows now.
+              </p>
+            ) : lifting ? (
+              <p className="sr-only">The flock is in the air.</p>
+            ) : (
+              <p className="max-w-xs text-center text-[15px] leading-relaxed text-[#4a524c]">
+                Drop photos and videos here.
+              </p>
+            )}
           </div>
         ) : (
           <div className="relative min-h-0 flex-1">
             {visible.map((item, index) => {
               const look = flockLook(item.id);
-              const breathePx = -(4 + Math.round((Math.abs(look.driftY) / 6) * 2));
+              const breathePx = -3;
               const breatheDuration = (2.8 + ((look.duration - 3.6) / 2.4) * 0.8).toFixed(2);
               const breatheDelay = (look.delay + index * 0.17).toFixed(2);
               return (

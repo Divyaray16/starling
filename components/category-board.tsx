@@ -301,17 +301,21 @@ function CategoryLine({
         onClick={settled ? openRow : undefined}
         onKeyDown={settled ? onKey : undefined}
       >
-        {coverId ? (
-          <PhotoSlot
-            id={coverId}
-            cover
-            item={landed.get(coverId)}
-            categoryId={category.id}
-            settled={settled}
-            drag={drag}
-          />
-        ) : null}
-        <h3 className="category-name">{category.name}</h3>
+        <div className="category-lead">
+          {coverId ? (
+            <PhotoSlot
+              id={coverId}
+              cover
+              item={landed.get(coverId)}
+              categoryId={category.id}
+              settled={settled}
+              drag={drag}
+            />
+          ) : null}
+          <h3 className="category-name" data-category-name={category.name}>
+            {category.name}
+          </h3>
+        </div>
         <div className="category-count">
           <CountTick count={category.items.length} />
         </div>
@@ -327,11 +331,13 @@ function CategoryLine({
             />
           ))}
         </div>
-        {settled ? (
-          <span className="category-open" aria-hidden="true">
-            <ArrowUpRight className="size-4" />
-          </span>
-        ) : null}
+        <span
+          className="category-open"
+          aria-hidden="true"
+          data-open-arrow={settled ? "true" : "false"}
+        >
+          <ArrowUpRight className="size-4" />
+        </span>
       </div>
     </li>
   );
