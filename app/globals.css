@@ -161,28 +161,6 @@
   overflow: hidden;
 }
 
-/* Quiet text control beside the folder button. The file input covers the words. */
-.quiet-file-choice {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  height: 2rem;
-  padding: 0 0.1rem;
-  border: 0;
-  background: transparent;
-  color: #6e7f68;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.quiet-file-choice:hover {
-  color: #3c443e;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
 .media-picker-input {
   position: absolute;
   inset: 0;

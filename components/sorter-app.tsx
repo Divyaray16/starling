@@ -83,25 +83,6 @@ type SorterState = {
   releasing: boolean;
 };
 
-const MEDIA_ACCEPT = [
-  "image/*",
-  "video/*",
-  ".heic",
-  ".heif",
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".gif",
-  ".mp4",
-  ".webm",
-  ".mov",
-  "image/heic",
-  "image/heif",
-  "image/heic-sequence",
-  "image/heif-sequence",
-].join(",");
-
 const EMPTY: SorterState = {
   phase: "empty",
   folderName: null,
@@ -1005,15 +986,6 @@ export function SorterApp() {
     }
   }
 
-  function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    // Clearing the value lets the same file be chosen again later. An empty
-    // list is a cancel: leave the session untouched.
-    event.target.value = "";
-    if (files.length === 0) return;
-    acceptFiles("Selected files", files);
-  }
-
   async function onDirectory(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
@@ -1245,19 +1217,6 @@ export function SorterApp() {
                   className="media-picker-input"
                   onChange={onDirectory}
                   {...{ webkitdirectory: "", directory: "" }}
-                />
-              </label>
-              <label className="quiet-file-choice" data-file-picker>
-                <span className="pointer-events-none">or choose files</span>
-                <input
-                  id="photo-file-input"
-                  type="file"
-                  name="photos"
-                  multiple
-                  accept={MEDIA_ACCEPT}
-                  aria-label="Choose files"
-                  className="media-picker-input"
-                  onChange={onFiles}
                 />
               </label>
               {settled || finishedEmpty ? (
