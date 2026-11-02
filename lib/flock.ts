@@ -1,9 +1,19 @@
 /**
- * Every file in the batch is a card in the pile. The cards sit in one
- * overlapping cluster that grows with the batch until it fills the stage.
- * Once the batch is ready, they leave in waves of about FLOCK_WAVE: one
+ * Every file in the batch is a card in the pile. The cards share one size and
+ * sit in one rounded cluster: a golden-angle spiral inside an ellipse at the
+ * middle of the pile box. Place 0 is the center. Place i is at angle i·φ and
+ * at radius (i / (n−1))^0.66, so the middle is denser, the center is occupied,
+ * and the outer cards stay on the same spiral. The ellipse grows with the
+ * batch and, near 65 cards, uses most of the box while stopping short of the
+ * edges by the card itself, a 7° tilt, and a margin. The card width is the
+ * largest size that still keeps neighboring centers about half a card apart,
+ * so the pile does not collapse into a knot or scatter. A handful of cards
+ * stays compact; the ellipse is pulled back in when they would otherwise
+ * spread across the field.
+ *
+ * Once the batch is ready, cards leave in waves of about FLOCK_WAVE: one
  * short arc each, with departures about 10ms apart. A wave lasts about
- * 320–420ms. Cards still waiting stay in the pile.
+ * 320–420ms. Cards still waiting keep the places they were given.
  */
 export const FLOCK_STAGGER_MS = 10;
 export const FLOCK_FLIGHT_MIN_MS = 320;
@@ -44,8 +54,8 @@ export type FlockLayout = {
   radiusY: number;
   width: number;
   height: number;
-  sizeMin: number;
-  sizeMax: number;
+  size: number;
+  count: number;
 };
 
 /** Picture height inside the framed tile. Matches MediaTile's 4px padding and 4:5 image. */
@@ -53,63 +63,141 @@ export function flockTileHeight(width: number): number {
   return (width - 8) * 1.25 + 8;
 }
 
-const PREFERRED_SIZE = 78;
-const MIN_SIZE = 36;
-const MAX_SIZE = 112;
-/** Overlap inside a compact pile. */
-const PILE_LAYERS = 2.45;
-/** A large batch may open until overlap is about this light, then it stops. */
-const OPEN_LAYERS = 1.65;
+const PREFERRED_MIN = 44;
+const PREFERRED_MAX = 112;
+/** Gap from the pile box to a card's rotated body. */
+const EDGE = 16;
+/** Radius power above 1/2 packs the middle without opening a hole. */
+const CENTER_WEIGHT = 0.66;
+/** Neighboring centers stay at least this fraction of a card width apart. */
+const MIN_GAP_RATIO = 0.4;
+/** Looser than this, a small batch is pulled back into a pile. */
+const LOOSE_GAP_RATIO = 0.56;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+type Point = { x: number; y: number };
+
+/**
+ * How much of the inset field the cluster wants. A single card stays put.
+ * Around 65 cards the pile fills the field; past that it stops growing and
+ * the cards shrink instead.
+ */
+function fieldFill(count: number): number {
+  if (count <= 1) return 0;
+  const t = Math.min(1, count / 65);
+  return 0.36 + 0.56 * Math.pow(t, 0.62);
+}
+
+function rotatedHalf(size: number): { hx: number; hy: number } {
+  const cardH = flockTileHeight(size);
+  const rad = (7 * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad));
+  const s = Math.abs(Math.sin(rad));
+  return {
+    hx: (size * c + cardH * s) / 2,
+    hy: (size * s + cardH * c) / 2,
+  };
+}
+
+let cachedCount = -1;
+let cachedPoints: Point[] = [];
+
+/** Unit-circle spiral, center first. Screen space stretches it into the ellipse. */
+export function flockPoints(count: number): Point[] {
+  const n = Math.max(1, Math.round(count));
+  if (n === cachedCount) return cachedPoints;
+  const points: Point[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const along = n <= 1 ? 0 : i / (n - 1);
+    const radius = Math.pow(along, CENTER_WEIGHT);
+    const angle = i * GOLDEN_ANGLE;
+    points.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
+  }
+  cachedCount = n;
+  cachedPoints = points;
+  return points;
+}
+
+function medianGap(points: Point[], rx: number, ry: number): number {
+  const n = points.length;
+  if (n <= 1) return 0;
+  const gaps = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) {
+    const ix = points[i].x * rx;
+    const iy = points[i].y * ry;
+    let best = Infinity;
+    for (let j = 0; j < n; j += 1) {
+      if (i === j) continue;
+      const dx = ix - points[j].x * rx;
+      const dy = iy - points[j].y * ry;
+      const dist = dx * dx + dy * dy;
+      if (dist < best) best = dist;
+    }
+    gaps[i] = Math.sqrt(best);
+  }
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(n / 2)];
+}
+
+function fieldAt(size: number, width: number, height: number): { maxRx: number; maxRy: number } {
+  const { hx, hy } = rotatedHalf(size);
+  return {
+    maxRx: Math.max(0, width / 2 - hx - EDGE),
+    maxRy: Math.max(0, height / 2 - hy - EDGE),
+  };
+}
 
 /**
  * One cluster for the whole batch. Positions are in the pile box, which the
- * stage measures. A few cards stay a compact pile. A large batch opens until
- * it fills the field, and the cards shrink only when that is still a knot.
+ * stage measures before any card is placed.
  */
 export function flockLayout(count: number, width: number, height: number): FlockLayout {
   const n = Math.max(1, Math.round(count));
   const w = Math.max(1, width);
   const h = Math.max(1, height);
-  const margin = 14;
-  let size = PREFERRED_SIZE;
-  let rx = 0;
-  let ry = 0;
+  const points = flockPoints(n);
+  const fill = fieldFill(n);
 
-  for (let step = 0; step < 8; step += 1) {
-    const cardH = flockTileHeight(size);
-    const cardArea = Math.max(1, size * cardH);
-    const maxRx = Math.max(8, w / 2 - size / 2 - margin);
-    const maxRy = Math.max(8, h / 2 - cardH / 2 - margin);
-    const aspect = maxRx / maxRy;
-    const fieldArea = Math.PI * maxRx * maxRy;
-    const denseArea = (n * cardArea) / PILE_LAYERS;
-    // Enough cards to cover the stage should use it, instead of sitting as a
-    // knot in the middle. Stop opening once the photos would lose their overlap.
-    const opened = n >= 24 ? Math.min(fieldArea, (n * cardArea) / OPEN_LAYERS) : denseArea;
-    const area = Math.max(denseArea, opened);
-    rx = Math.sqrt((area * aspect) / Math.PI);
-    ry = rx / aspect;
-    if (rx <= maxRx && ry <= maxRy) break;
-    const fit = Math.min(maxRx / Math.max(rx, 1), maxRy / Math.max(ry, 1));
-    const next = Math.max(MIN_SIZE, size * fit);
-    rx = maxRx;
-    ry = maxRy;
-    if (next >= size - 0.4) break;
-    size = next;
+  let chosenSize = PREFERRED_MIN;
+  let chosenRx = 0;
+  let chosenRy = 0;
+
+  for (let size = PREFERRED_MAX; size >= PREFERRED_MIN; size -= 1) {
+    const { maxRx, maxRy } = fieldAt(size, w, h);
+    if (n <= 1) {
+      if (maxRx > 0 && maxRy > 0) {
+        chosenSize = size;
+        chosenRx = 0;
+        chosenRy = 0;
+        break;
+      }
+      continue;
+    }
+    let used = fill;
+    let rx = maxRx * used;
+    let ry = maxRy * used;
+    let ratio = medianGap(points, rx, ry) / size;
+    if (ratio > LOOSE_GAP_RATIO && fill > 0) {
+      const minFill = n >= 48 ? Math.min(fill, Math.max(0.78, fill * 0.86)) : Math.min(fill, 0.3);
+      const scaled = fill * (0.5 / ratio);
+      used = Math.min(fill, Math.max(minFill, scaled));
+      rx = maxRx * used;
+      ry = maxRy * used;
+      ratio = medianGap(points, rx, ry) / size;
+    }
+    chosenSize = size;
+    chosenRx = rx;
+    chosenRy = ry;
+    if (ratio >= MIN_GAP_RATIO) break;
   }
 
-  const sizeMin = Math.max(MIN_SIZE - 2, Math.round(size * 0.9));
-  const sizeMax = Math.min(MAX_SIZE + 6, Math.max(sizeMin, Math.round(size * 1.08)));
-  const cardH = flockTileHeight(sizeMax);
-  const maxRx = Math.max(0, w / 2 - sizeMax / 2 - margin);
-  const maxRy = Math.max(0, h / 2 - cardH / 2 - margin);
   return {
-    radiusX: Math.min(rx, maxRx),
-    radiusY: Math.min(ry, maxRy),
+    radiusX: chosenRx,
+    radiusY: chosenRy,
     width: w,
     height: h,
-    sizeMin,
-    sizeMax,
+    size: chosenSize,
+    count: n,
   };
 }
 
@@ -132,28 +220,28 @@ export function flockTilt(id: string): number {
 }
 
 /**
- * Stable place in the cluster. The id picks the spot, so a departure does
- * not shove the cards still waiting.
+ * Stable place in the cluster. `slot` is the file's place in the spiral and
+ * does not change when another card leaves, so the ones still waiting stay put.
  */
-export function flockLook(id: string, layout: FlockLayout): FlockLook {
+export function flockLook(id: string, slot: number, layout: FlockLayout): FlockLook {
   const h = hash(id);
-  const angle = unit(h, 1) * Math.PI * 2;
-  const ring = Math.sqrt(unit(h, 2));
-  const span = Math.max(0, layout.sizeMax - layout.sizeMin);
-  const size = layout.sizeMin + Math.round(unit(h, 4) * span);
-  const cx = layout.width / 2 + Math.cos(angle) * layout.radiusX * ring;
-  const cy = layout.height / 2 + Math.sin(angle) * layout.radiusY * ring;
+  const points = flockPoints(layout.count);
+  const index = Math.min(points.length - 1, Math.max(0, Math.round(slot)));
+  const point = points[index] ?? { x: 0, y: 0 };
+  const cx = layout.width / 2 + point.x * layout.radiusX;
+  const cy = layout.height / 2 + point.y * layout.radiusY;
   const x = layout.width > 0 ? (cx / layout.width) * 100 : 50;
   const y = layout.height > 0 ? (cy / layout.height) * 100 : 50;
+  const radial = Math.min(1, Math.hypot(point.x, point.y));
   return {
     x,
     y,
     tilt: flockTilt(id),
-    size,
+    size: layout.size,
     driftX: unit(h, 5) * 6 - 3,
     driftY: unit(h, 6) * 5 - 2.5,
     duration: 3.6 + unit(h, 7) * 2.4,
     delay: -unit(h, 8) * 4.5,
-    z: 1 + Math.floor(unit(h, 9) * 20),
+    z: 10 + Math.floor(unit(h, 9) * 36) + Math.round((1 - radial) * 14),
   };
 }

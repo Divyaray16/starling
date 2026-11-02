@@ -123,6 +123,28 @@ function nextPaint() {
   });
 }
 
+/**
+ * Flight origins are the laid-out card centers. Wait until the pile frame has
+ * measured itself and placed every card before reading those centers.
+ */
+async function waitForPileLayout(ids: string[]) {
+  const pending = new Set(ids);
+  for (let attempt = 0; attempt < 20 && pending.size > 0; attempt += 1) {
+    const frame = document.querySelector("[data-pile-cards]");
+    const laidOut = frame instanceof HTMLElement && frame.dataset.pileReady === "true";
+    if (laidOut) {
+      for (const id of [...pending]) {
+        const node = document.querySelector(`[data-flock-id="${CSS.escape(id)}"]`);
+        if (!(node instanceof HTMLElement)) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width >= 8 && rect.height >= 8) pending.delete(id);
+      }
+    }
+    if (pending.size === 0) return;
+    await nextPaint();
+  }
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -805,6 +827,8 @@ export function SorterApp() {
       });
       revealDocks(entries.map((entry) => entry.item.id));
       await nextPaint();
+      if (runId.current !== id) return;
+      await waitForPileLayout(entries.map((entry) => entry.item.id));
       if (runId.current !== id) return;
 
       const queue: Held[] = [];

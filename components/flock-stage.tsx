@@ -5,6 +5,14 @@ import { flockLayout, flockLook } from "@/lib/flock";
 import type { QueueItem } from "@/lib/types";
 import { useLayoutEffect, useRef, useState } from "react";
 
+function sameIds(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 export function FlockStage({
   items,
   batchCount,
@@ -24,7 +32,25 @@ export function FlockStage({
   const frameRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [heldCount, setHeldCount] = useState(0);
-  const layoutCount = items.length === 0 ? 0 : Math.max(heldCount, items.length, batchCount);
+  const [placed, setPlaced] = useState<string[]>([]);
+  const known = new Set(placed);
+  const continuing = items.length > 0 && items.some((item) => known.has(item.id));
+  let places = placed;
+  if (!continuing) {
+    const fresh = items.map((item) => item.id);
+    if (!sameIds(fresh, placed)) places = fresh;
+  } else {
+    const added = items.filter((item) => !known.has(item.id));
+    if (added.length > 0) places = [...placed, ...added.map((item) => item.id)];
+  }
+  if (places !== placed) setPlaced(places);
+  const slotOf = new Map(places.map((id, index) => [id, index]));
+  const layoutCount =
+    items.length === 0
+      ? 0
+      : continuing
+        ? Math.max(heldCount, items.length, batchCount)
+        : Math.max(items.length, batchCount);
   if (layoutCount !== heldCount) setHeldCount(layoutCount);
   const pileOpen = items.length > 0;
 
@@ -89,10 +115,15 @@ export function FlockStage({
             )}
           </div>
         ) : (
-          <div ref={frameRef} className="relative min-h-0 flex-1" data-pile-cards={items.length}>
+          <div
+            ref={frameRef}
+            className="relative min-h-0 flex-1"
+            data-pile-cards={items.length}
+            data-pile-ready={layout ? "true" : "false"}
+          >
             {layout
               ? items.map((item, index) => {
-                  const look = flockLook(item.id, layout);
+                  const look = flockLook(item.id, slotOf.get(item.id) ?? index, layout);
                   const breathePx = -3;
                   const breatheDuration = (2.8 + ((look.duration - 3.6) / 2.4) * 0.8).toFixed(2);
                   const breatheDelay = (look.delay + index * 0.17).toFixed(2);
