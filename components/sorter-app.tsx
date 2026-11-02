@@ -1347,14 +1347,38 @@ export function SorterApp() {
   );
 }
 
-/** Four squares that lift and settle beside "Sorting the pile". */
+/** A mint firefly scans four sage dots and melts through them. */
 function SortFlock() {
   return (
-    <span className="sort-flock" data-sort-flock="4" aria-hidden="true">
-      <span className="sort-mark" />
-      <span className="sort-mark" />
-      <span className="sort-mark" />
-      <span className="sort-mark" />
+    <span className="sort-flock" data-sort-flock="firefly" aria-hidden="true">
+      <svg className="sort-goo-svg" aria-hidden="true" focusable="false">
+        <filter
+          id="sort-goo"
+          x="-40%"
+          y="-90%"
+          width="180%"
+          height="280%"
+          colorInterpolationFilters="sRGB"
+        >
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+          <feColorMatrix
+            in="blur"
+            mode="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -8"
+            result="goo"
+          />
+        </filter>
+      </svg>
+      <span className="sort-firefly">
+        <span className="sort-scan sort-scan-glow" />
+        <span className="sort-balls" style={{ filter: "url(#sort-goo)" }}>
+          <span className="sort-ball" />
+          <span className="sort-ball" />
+          <span className="sort-ball" />
+          <span className="sort-ball" />
+          <span className="sort-scan" />
+        </span>
+      </span>
     </span>
   );
 }
