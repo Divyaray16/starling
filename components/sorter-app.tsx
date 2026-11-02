@@ -242,10 +242,6 @@ function slotVisible(slotId: string): boolean {
   return true;
 }
 
-/**
- * Slide a category strip so its earliest still-flying card is in view.
- * Covers sit outside the strip. Does not scroll the page.
- */
 /** Bring a below-the-fold slot into the board. Returns whether the scroller moved. */
 function scrollSlotIntoBoard(slotId: string): boolean {
   const node = document.querySelector(`[data-dock-slot="${CSS.escape(slotId)}"]`);
@@ -259,6 +255,7 @@ function scrollSlotIntoBoard(slotId: string): boolean {
   return Math.abs(scroller.scrollTop - before) > 1;
 }
 
+/** Slide a category strip so its earliest still-flying card is in view. */
 function revealEarliestSlots(queue: Held[]) {
   const seen = new Set<string>();
   for (const entry of queue) {
@@ -800,7 +797,7 @@ export function SorterApp() {
 
     /**
      * The pile is ready and every file in this batch is labeled. Reserve the
-     * real row layout (full names, covers, small slots), then fly only the
+     * real row layout (full names, equal slots), then fly only the
      * cards you can see, in waves, onto slots that are actually on screen.
      * Everything else lands in its row without a flying node.
      */
@@ -1314,7 +1311,7 @@ export function SorterApp() {
             decodeFailures={state.decodeFailures}
           />
         </header>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-board-scroll>
+        <div className="board-scroll min-h-0 min-w-0 flex-1 overflow-y-auto" data-board-scroll>
           <CategoryBoard
             categories={state.categories}
             settled={settled}

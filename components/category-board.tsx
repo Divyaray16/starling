@@ -230,7 +230,7 @@ export function CategoryBoard({
 
 function LandingSurface({ children, inset = true }: { children: ReactNode; inset?: boolean }) {
   return (
-    <div className={inset ? "px-6 pt-1 pb-8 sm:px-10 sm:pb-10" : ""}>
+    <div className={inset ? "px-6 pt-1 pb-12 sm:px-10 sm:pb-16" : ""}>
       <div className="landing-surface" data-landing-tray>
         {children}
       </div>
@@ -270,8 +270,6 @@ function CategoryLine({
   const warm = useLandingWarmth(category.items.length);
   const order = dockOrder(category);
   const landed = new Map(category.items.map((item) => [item.id, item]));
-  const coverId = order[0];
-  const rest = order.slice(1);
 
   function openRow() {
     if (drag.suppressClick.current) return;
@@ -302,25 +300,15 @@ function CategoryLine({
         onKeyDown={settled ? onKey : undefined}
       >
         <div className="category-lead">
-          {coverId ? (
-            <PhotoSlot
-              id={coverId}
-              cover
-              item={landed.get(coverId)}
-              categoryId={category.id}
-              settled={settled}
-              drag={drag}
-            />
-          ) : null}
           <h3 className="category-name" data-category-name={category.name}>
             {category.name}
           </h3>
-        </div>
-        <div className="category-count">
-          <CountTick count={category.items.length} />
+          <div className="category-count">
+            <CountTick count={category.items.length} />
+          </div>
         </div>
         <div data-dock={category.id} data-count={category.items.length} className="category-strip">
-          {rest.map((id) => (
+          {order.map((id) => (
             <PhotoSlot
               key={id}
               id={id}
@@ -369,26 +357,19 @@ function SlotHold() {
 
 function PhotoSlot({
   id,
-  cover = false,
   item,
   categoryId,
   settled,
   drag,
 }: {
   id: string;
-  cover?: boolean;
   item: LandedTile | undefined;
   categoryId: string;
   settled: boolean;
   drag: TileDrag;
 }) {
   return (
-    <div
-      data-dock-slot={id}
-      data-cover={cover ? "true" : undefined}
-      data-landed={item ? id : undefined}
-      className={cover ? "cover-slot" : "dock-slot"}
-    >
+    <div data-dock-slot={id} data-landed={item ? id : undefined} className="dock-slot">
       {item ? (
         <div
           className={settled ? "thumb-grab" : undefined}
