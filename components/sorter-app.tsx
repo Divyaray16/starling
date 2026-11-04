@@ -81,6 +81,25 @@ type SorterState = {
   releasing: boolean;
 };
 
+const MEDIA_ACCEPT = [
+  "image/*",
+  "video/*",
+  ".heic",
+  ".heif",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".mp4",
+  ".webm",
+  ".mov",
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+].join(",");
+
 const EMPTY: SorterState = {
   phase: "empty",
   folderName: null,
@@ -320,8 +339,8 @@ function moveLandedTile(
     if (category.id === toId) {
       next.push({
         ...category,
-        items: [...category.items, item],
-        slots: [...orderOf(category).filter((id) => id !== itemId), itemId],
+        items: [item, ...category.items],
+        slots: [itemId, ...orderOf(category).filter((id) => id !== itemId)],
       });
       continue;
     }
@@ -391,10 +410,24 @@ export function SorterApp() {
   const pipelineRunning = useRef(false);
   const pipelineToken = useRef(0);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const filesInputRef = useRef<HTMLInputElement | null>(null);
+  const pickerShellRef = useRef<HTMLDivElement | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const setFolderInput = useCallback((node: HTMLInputElement | null) => {
     folderInputRef.current = node;
     markDirectoryInput(node);
   }, []);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const close = (event: PointerEvent) => {
+      const shell = pickerShellRef.current;
+      if (shell && event.target instanceof Node && shell.contains(event.target)) return;
+      setPickerOpen(false);
+    };
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
+  }, [pickerOpen]);
 
   useEffect(() => {
     return () => {
@@ -1018,6 +1051,13 @@ export function SorterApp() {
     acceptFiles(folder.folderName, folder.files);
   }
 
+  function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    acceptFiles("Selected files", files);
+  }
+
   async function onDrop(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
     setDragOver(false);
@@ -1209,13 +1249,10 @@ export function SorterApp() {
 
           <div className={cn("max-w-lg", settled || finishedEmpty ? "mt-6" : "mt-7")}>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <label
+              <div
+                ref={pickerShellRef}
+                className="picker-shell"
                 data-folder-picker
-                className={cn(
-                  buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
-                  "media-picker h-11 cursor-pointer rounded-2xl px-[23px] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-                  settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
-                )}
                 onDragOverCapture={(event) => {
                   event.preventDefault();
                   setDragOver(true);
@@ -1226,19 +1263,70 @@ export function SorterApp() {
                   void onDrop(event);
                 }}
               >
-                <span className="pointer-events-none">Choose files or folder</span>
+                <button
+                  type="button"
+                  className={cn(
+                    buttonVariants({ size: "lg", variant: settled ? "outline" : "default" }),
+                    "media-picker h-11 cursor-pointer rounded-2xl px-[23px] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                    settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
+                  )}
+                  aria-haspopup="menu"
+                  aria-expanded={pickerOpen}
+                  onClick={() => setPickerOpen((open) => !open)}
+                >
+                  Choose files or folder
+                </button>
+                {pickerOpen ? (
+                  <div className="picker-menu" role="menu" aria-label="Add photos or videos">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="picker-menu-action"
+                      onClick={() => {
+                        setPickerOpen(false);
+                        filesInputRef.current?.click();
+                      }}
+                    >
+                      Files
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="picker-menu-action"
+                      onClick={() => {
+                        setPickerOpen(false);
+                        folderInputRef.current?.click();
+                      }}
+                    >
+                      Folder
+                    </button>
+                  </div>
+                ) : null}
+                <input
+                  ref={filesInputRef}
+                  id="photo-file-input"
+                  type="file"
+                  name="photos"
+                  multiple
+                  accept={MEDIA_ACCEPT}
+                  tabIndex={-1}
+                  aria-hidden
+                  className="picker-hidden-input"
+                  onChange={onFiles}
+                />
                 <input
                   id="folder-file-input"
                   ref={setFolderInput}
                   type="file"
                   name="folder"
                   multiple
-                  aria-label="Choose files or folder"
-                  className="media-picker-input"
+                  tabIndex={-1}
+                  aria-hidden
+                  className="picker-hidden-input"
                   onChange={onDirectory}
                   {...{ webkitdirectory: "", directory: "" }}
                 />
-              </label>
+              </div>
               {settled || finishedEmpty ? (
                 <Button
                   type="button"

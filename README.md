@@ -30,7 +30,7 @@ npm start
 
 ## What stays in the browser
 
-**Choose files or folder** is a directory picker (`webkitdirectory`). Choosing a folder returns the images and videos inside it, including HEIC. You can also drop files or a folder onto the pile. Canceling the dialog leaves the session as it is. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
+**Choose files or folder** opens a small menu: **Files** adds loose photos and videos (including HEIC), and **Folder** opens the system directory picker. You can also drop files or a folder onto the pile. Canceling either dialog leaves the session as it is. Classification runs locally with Transformers.js and a quantized CLIP model (`Xenova/clip-vit-base-patch32`). The weights download from Hugging Face the first time and are cached in the browser. There is no account, no database, and no photo upload.
 
 Photos (JPEG, PNG, WebP, GIF, HEIC, HEIF) and videos (MP4, WebM, MOV) can share a category. HEIC and HEIF are decoded in this browser with [libheif](https://github.com/strukturag/libheif) (the `libheif-js` wasm build) to a bitmap, drawn to a canvas, and then labeled the same way as a JPEG. The zip still contains the original HEIC. A video is labeled from three frames — near the start, the middle, and the end, when the clip is long enough to tell them apart. Those scores are combined so one odd frame does not decide. The thumbnail is the middle frame. Each tile is badged Photo or Video. A file that cannot be decoded is named on its own; the rest of the folder still sorts. Other files that are not photos or videos are skipped, and the page says how many.
 
@@ -59,4 +59,4 @@ The clip is a one-second view of the Shibuya photograph so the video path can be
 - HEIC and HEIF are decoded locally. A multi-image HEIC uses the first image. A variant libheif cannot read (a truncated file, or an uncommon codec inside the HEIF container) is left out by itself, with that file’s name on the page.
 - The first sort downloads about 150 MB of model weights. Later sorts reuse the browser cache. The HEIC decoder is bundled with the app and is not a photo upload. The empty page paints before that download starts.
 - A large folder shows every file as a card in one pile. The cards overlap, and they fly in waves of about 12. Every file lands in a category row. The count is the whole batch.
-- The folder control opens the system directory picker. Loose files still add by dropping them on the pile. HEIC and HEIF are included either way.
+- **Choose files or folder** opens a menu for loose files or a folder. Dropping on the pile still works. HEIC and HEIF are included either way.

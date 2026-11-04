@@ -230,7 +230,7 @@ export function CategoryBoard({
 
 function LandingSurface({ children, inset = true }: { children: ReactNode; inset?: boolean }) {
   return (
-    <div className={inset ? "px-6 pt-1 pb-12 sm:px-10 sm:pb-16" : ""}>
+    <div className={inset ? "px-6 pt-1 pb-16 sm:px-10 sm:pb-20" : ""}>
       <div className="landing-surface" data-landing-tray>
         {children}
       </div>
@@ -299,13 +299,22 @@ function CategoryLine({
         onClick={settled ? openRow : undefined}
         onKeyDown={settled ? onKey : undefined}
       >
-        <div className="category-lead">
-          <h3 className="category-name" data-category-name={category.name}>
-            {category.name}
-          </h3>
-          <div className="category-count">
-            <CountTick count={category.items.length} />
+        <div className="category-head">
+          <div className="category-lead">
+            <h3 className="category-name" data-category-name={category.name}>
+              {category.name}
+            </h3>
+            <div className="category-count">
+              <CountTick count={category.items.length} />
+            </div>
           </div>
+          <span
+            className="category-open"
+            aria-hidden="true"
+            data-open-arrow={settled ? "true" : "false"}
+          >
+            <ArrowUpRight className="size-4" />
+          </span>
         </div>
         <div data-dock={category.id} data-count={category.items.length} className="category-strip">
           {order.map((id) => (
@@ -319,13 +328,6 @@ function CategoryLine({
             />
           ))}
         </div>
-        <span
-          className="category-open"
-          aria-hidden="true"
-          data-open-arrow={settled ? "true" : "false"}
-        >
-          <ArrowUpRight className="size-4" />
-        </span>
       </div>
     </li>
   );

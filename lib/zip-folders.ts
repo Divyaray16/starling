@@ -1,6 +1,17 @@
 import { zip } from "fflate";
 import type { CategoryRow } from "@/lib/types";
 
+function itemsInSlotOrder(category: CategoryRow) {
+  const landed = new Map(category.items.map((item) => [item.id, item]));
+  const order = category.slots.length > 0 ? category.slots : category.items.map((item) => item.id);
+  const ordered: typeof category.items = [];
+  for (const id of order) {
+    const item = landed.get(id);
+    if (item) ordered.push(item);
+  }
+  return ordered;
+}
+
 function safeSegment(name: string): string {
   const cleaned = name
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
@@ -40,7 +51,7 @@ export async function buildCategoryZip(categories: CategoryRow[]): Promise<Uint8
     if (category.items.length === 0) continue;
     const folder = safeSegment(category.name);
     const used = new Set<string>();
-    for (const item of category.items) {
+    for (const item of itemsInSlotOrder(category)) {
       const filename = uniqueName(item.file.name || "file", used);
       entries[`${folder}/${filename}`] = new Uint8Array(await item.file.arrayBuffer());
     }
