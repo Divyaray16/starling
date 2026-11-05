@@ -3,6 +3,7 @@
 import { CategoryBoard } from "@/components/category-board";
 import { FlightTile } from "@/components/flight-tile";
 import { FlockStage } from "@/components/flock-stage";
+import { SessionSummary } from "@/components/session-summary";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   classifyManyWithClip,
@@ -1474,47 +1475,6 @@ export function SorterApp() {
         />
       ))}
     </div>
-  );
-}
-
-function SessionSummary({
-  files,
-  photos,
-  videos,
-  categories,
-}: {
-  files: number;
-  photos: number;
-  videos: number;
-  categories: number;
-}) {
-  const figures = [
-    { label: "Files", value: files },
-    { label: "Photos", value: photos },
-    { label: "Videos", value: videos },
-    { label: "Categories", value: categories },
-  ];
-  return (
-    <dl
-      className="mt-6 flex max-w-lg flex-wrap gap-x-8 gap-y-3"
-      data-session-summary
-      data-summary-files={files}
-      data-summary-photos={photos}
-      data-summary-videos={videos}
-      data-summary-categories={categories}
-    >
-      {figures.map((figure) => (
-        <div key={figure.label} className="flex min-w-16 flex-col gap-1">
-          <dt className="text-[11px] leading-none text-[#6e7f68]">{figure.label}</dt>
-          <dd
-            className="m-0 text-[1.55rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e] tabular-nums"
-            data-summary-value={figure.label.toLowerCase()}
-          >
-            {figure.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
