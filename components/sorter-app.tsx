@@ -21,15 +21,24 @@ import {
   flockTilt,
 } from "@/lib/flock";
 import {
+  fileIdentity,
   filesFromDataTransfer,
   filesFromList,
+  mediaKind,
   partitionFiles,
   prepareQueueItem,
   rememberFiles,
   takeNewFiles,
 } from "@/lib/intake";
 import { loadSampleFolder } from "@/lib/sample-folder";
-import type { CategoryRow, ClassifierMode, LabelHit, Point, QueueItem } from "@/lib/types";
+import type {
+  CategoryRow,
+  ClassifierMode,
+  LabelHit,
+  MediaKind,
+  Point,
+  QueueItem,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -60,12 +69,16 @@ type LandingWait = {
   timer: number;
 };
 
+type IncomingFile = { key: string; kind: MediaKind };
+
 type SorterState = {
   phase: Phase;
   folderName: string | null;
   pile: QueueItem[];
   categories: CategoryRow[];
   flights: Flight[];
+  /** Accepted files still being read, before they join the pile. */
+  incoming: IncomingFile[];
   total: number;
   labeled: number;
   landed: number;
@@ -106,6 +119,7 @@ const EMPTY: SorterState = {
   pile: [],
   categories: [],
   flights: [],
+  incoming: [],
   total: 0,
   labeled: 0,
   landed: 0,
@@ -174,6 +188,38 @@ function fallbackNotice() {
 
 function countItems(categories: CategoryRow[]) {
   return categories.reduce((sum, category) => sum + category.items.length, 0);
+}
+
+function sessionKind(file: File): MediaKind {
+  return mediaKind(file) === "video" ? "video" : "photo";
+}
+
+/** Files, photos, and videos actually held in this session, plus rows on the board. */
+function sessionCounts(state: SorterState) {
+  let photos = 0;
+  let videos = 0;
+  const seen = new Set<string>();
+  const add = (id: string, kind: MediaKind) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (kind === "video") videos += 1;
+    else photos += 1;
+  };
+  for (const item of state.pile) add(item.id, item.kind);
+  for (const flight of state.flights) add(flight.item.id, flight.item.kind);
+  for (const category of state.categories) {
+    for (const item of category.items) add(item.id, item.kind);
+  }
+  for (const entry of state.incoming) {
+    if (entry.kind === "video") videos += 1;
+    else photos += 1;
+  }
+  return {
+    files: photos + videos,
+    photos,
+    videos,
+    categories: state.categories.length,
+  };
 }
 
 function withShells(categories: CategoryRow[], wave: Held[]): CategoryRow[] {
@@ -579,6 +625,10 @@ export function SorterApp() {
 
     sessionLive.current = true;
     intakeQueue.current.push(...partition.supported);
+    const incomingFiles = partition.supported.map((file) => ({
+      key: fileIdentity(file),
+      kind: sessionKind(file),
+    }));
     setOpenCategoryId(null);
     setState((current) => {
       const showBoot = !current.mode && current.phase === "empty";
@@ -586,6 +636,7 @@ export function SorterApp() {
         ...current,
         phase: "sorting",
         folderName: mergeFolderName(current.folderName, folderName),
+        incoming: [...current.incoming, ...incomingFiles],
         total: current.total + partition.supported.length,
         skipped: current.skipped + partition.skipped,
         error: null,
@@ -695,8 +746,14 @@ export function SorterApp() {
         if (runId.current !== id) return current;
         const seen = new Set(current.pile.map((item) => item.id));
         const extras = prepared.filter((item) => !seen.has(item.id) && !removed.has(item.id));
-        if (extras.length === 0) return current;
-        return { ...current, pile: [...current.pile, ...extras] };
+        const readyKeys = new Set(prepared.map((item) => fileIdentity(item.file)));
+        const incoming = current.incoming.filter((entry) => !readyKeys.has(entry.key));
+        if (extras.length === 0 && incoming.length === current.incoming.length) return current;
+        return {
+          ...current,
+          pile: extras.length > 0 ? [...current.pile, ...extras] : current.pile,
+          incoming,
+        };
       });
     };
 
@@ -719,12 +776,14 @@ export function SorterApp() {
             urls.current.push(item.thumbUrl);
             syncPile();
           } catch {
+            const failedKey = fileIdentity(file);
             setState((current) =>
               runId.current === id
                 ? {
                     ...current,
                     unreadable: current.unreadable + 1,
                     decodeFailures: [...current.decodeFailures, file.name],
+                    incoming: current.incoming.filter((entry) => entry.key !== failedKey),
                   }
                 : current,
             );
@@ -1126,6 +1185,7 @@ export function SorterApp() {
   }
 
   const fileCount = countItems(state.categories);
+  const summary = sessionCounts(state);
   const settled = state.phase === "done" && fileCount > 0;
   const finishedEmpty = state.phase === "done" && fileCount === 0;
   const sorting = state.phase === "sorting";
@@ -1190,6 +1250,13 @@ export function SorterApp() {
           <p className="mt-3 max-w-md text-lg leading-snug text-[#3c443e]">
             The pile lifts <em className="accent-word">together</em> and lands in place.
           </p>
+
+          <SessionSummary
+            files={summary.files}
+            photos={summary.photos}
+            videos={summary.videos}
+            categories={summary.categories}
+          />
 
           {state.folderName ? (
             <p className="mt-4 text-sm text-[#5f6a62]">{state.folderName}</p>
@@ -1407,6 +1474,47 @@ export function SorterApp() {
         />
       ))}
     </div>
+  );
+}
+
+function SessionSummary({
+  files,
+  photos,
+  videos,
+  categories,
+}: {
+  files: number;
+  photos: number;
+  videos: number;
+  categories: number;
+}) {
+  const figures = [
+    { label: "Files", value: files },
+    { label: "Photos", value: photos },
+    { label: "Videos", value: videos },
+    { label: "Categories", value: categories },
+  ];
+  return (
+    <dl
+      className="mt-6 flex max-w-lg flex-wrap gap-x-8 gap-y-3"
+      data-session-summary
+      data-summary-files={files}
+      data-summary-photos={photos}
+      data-summary-videos={videos}
+      data-summary-categories={categories}
+    >
+      {figures.map((figure) => (
+        <div key={figure.label} className="flex min-w-16 flex-col gap-1">
+          <dt className="text-[11px] leading-none text-[#6e7f68]">{figure.label}</dt>
+          <dd
+            className="m-0 text-[1.55rem] leading-none font-semibold tracking-[-0.04em] text-[#3c443e] tabular-nums"
+            data-summary-value={figure.label.toLowerCase()}
+          >
+            {figure.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
