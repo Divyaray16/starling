@@ -32,10 +32,10 @@ scope.onmessage = async (event) => {
         scope.postMessage({ type: "progress", progress });
       });
       scope.postMessage({ type: "ready" });
-    } catch (error) {
+    } catch {
       scope.postMessage({
         type: "model-error",
-        message: error instanceof Error ? error.message : "The vision model failed to load.",
+        message: "The vision model couldn’t be loaded.",
       });
     }
     return;

@@ -85,7 +85,7 @@ function useTileDrag(
       }, 120);
       if (commit) {
         const hit = categoryAtPoint(x, y);
-        if (hit && hit !== current.categoryId) onMove(current.item.id, current.categoryId, hit);
+        if (hit) onMove(current.item.id, current.categoryId, hit);
       }
     }
     setGhost(null);
@@ -419,7 +419,13 @@ function CategoryGrid({
   }, [onClose]);
 
   return (
-    <div className="px-6 py-6 sm:px-10" role="region" aria-label={`${category.name} photos`} data-grid={category.id}>
+    <div
+      className="px-6 py-6 sm:px-10"
+      role="region"
+      aria-label={`${category.name} photos`}
+      data-grid={category.id}
+      data-category={category.id}
+    >
       <Button
         type="button"
         variant="outline"

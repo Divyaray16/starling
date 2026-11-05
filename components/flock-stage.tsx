@@ -110,7 +110,7 @@ export function FlockStage({
               <p className="sr-only">The flock is in the air.</p>
             ) : (
               <p className="max-w-xs text-center text-[15px] leading-relaxed text-[#4a524c]">
-                Drop photos and videos here.
+                Drop photos, videos, or a folder here.
               </p>
             )}
           </div>

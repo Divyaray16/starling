@@ -10,7 +10,6 @@ import {
   classifyWithClip,
   isModelRuntimeError,
   loadClipModel,
-  onModelProgress,
   stopClipWorker,
 } from "@/lib/clip-classifier";
 import { classifyFramesWithFallback } from "@/lib/fallback-classifier";
@@ -24,7 +23,6 @@ import {
 import {
   fileIdentity,
   filesFromDataTransfer,
-  filesFromList,
   mediaKind,
   partitionFiles,
   prepareQueueItem,
@@ -42,7 +40,7 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildCategoryZip, zipDownloadName } from "@/lib/zip-folders";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type Phase = "empty" | "sorting" | "done";
 
@@ -86,8 +84,6 @@ type SorterState = {
   skipped: number;
   unreadable: number;
   decodeFailures: string[];
-  modelLine: string | null;
-  modelRatio: number | null;
   mode: ClassifierMode | null;
   error: string | null;
   notice: string | null;
@@ -127,8 +123,6 @@ const EMPTY: SorterState = {
   skipped: 0,
   unreadable: 0,
   decodeFailures: [],
-  modelLine: null,
-  modelRatio: null,
   mode: null,
   error: null,
   notice: null,
@@ -137,18 +131,6 @@ const EMPTY: SorterState = {
 
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function markDirectoryInput(node: HTMLInputElement | null) {
-  if (!node) return;
-  node.multiple = true;
-  node.setAttribute("webkitdirectory", "");
-  node.setAttribute("directory", "");
-  try {
-    (node as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true;
-  } catch {
-    // The content attribute is already present when the property is read-only.
-  }
 }
 
 function nextPaint() {
@@ -354,22 +336,60 @@ function measureSlot(slotId: string): { center: Point; width: number } | null {
 
 const SAVED_FLASH_MS = 2000;
 
-/** Manual correction. The original file moves with the tile; nothing is reclassified. */
+/** Dock order of photos that have actually landed. In-flight placeholders are skipped. */
+function landedOrder(category: CategoryRow): string[] {
+  const known = new Set(category.items.map((entry) => entry.id));
+  const source = category.slots.length > 0 ? category.slots : category.items.map((entry) => entry.id);
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of source) {
+    if (!known.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(id);
+  }
+  for (const item of category.items) {
+    if (seen.has(item.id)) continue;
+    ordered.push(item.id);
+  }
+  return ordered;
+}
+
+/** Put this tile at index 0. Items and slots stay in the same order. */
+function withItemFirst(category: CategoryRow, item: CategoryRow["items"][number]): CategoryRow {
+  const slots = [item.id, ...landedOrder(category).filter((id) => id !== item.id)];
+  const byId = new Map(category.items.map((entry) => [entry.id, entry]));
+  byId.set(item.id, item);
+  const items = slots
+    .map((id) => byId.get(id))
+    .filter((entry): entry is CategoryRow["items"][number] => entry !== undefined);
+  return { ...category, items, slots };
+}
+
+/**
+ * Manual correction. The original file moves with the tile; nothing is reclassified.
+ * The tile is inserted at the front of the destination, including a move inside the
+ * same category. An empty source row is removed.
+ */
 function moveLandedTile(
   categories: CategoryRow[],
   itemId: string,
   fromId: string,
   toId: string,
 ): CategoryRow[] {
-  if (fromId === toId) return categories;
   const from = categories.find((category) => category.id === fromId);
   const to = categories.find((category) => category.id === toId);
   if (!from || !to) return categories;
   const item = from.items.find((entry) => entry.id === itemId);
-  if (!item || to.items.some((entry) => entry.id === itemId)) return categories;
+  if (!item) return categories;
 
-  const orderOf = (category: CategoryRow) =>
-    category.slots.length > 0 ? category.slots : category.items.map((entry) => entry.id);
+  if (fromId === toId) {
+    if (landedOrder(from)[0] === itemId) return categories;
+    return categories.map((category) =>
+      category.id === fromId ? withItemFirst(category, item) : category,
+    );
+  }
+
+  if (to.items.some((entry) => entry.id === itemId)) return categories;
 
   const next: CategoryRow[] = [];
   for (const category of categories) {
@@ -379,16 +399,12 @@ function moveLandedTile(
       next.push({
         ...category,
         items,
-        slots: orderOf(category).filter((id) => id !== itemId),
+        slots: landedOrder(category).filter((id) => id !== itemId),
       });
       continue;
     }
     if (category.id === toId) {
-      next.push({
-        ...category,
-        items: [item, ...category.items],
-        slots: [itemId, ...orderOf(category).filter((id) => id !== itemId)],
-      });
+      next.push(withItemFirst(category, item));
       continue;
     }
     next.push(category);
@@ -456,25 +472,8 @@ export function SorterApp() {
   const sessionLive = useRef(false);
   const pipelineRunning = useRef(false);
   const pipelineToken = useRef(0);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const filesInputRef = useRef<HTMLInputElement | null>(null);
-  const pickerShellRef = useRef<HTMLDivElement | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const setFolderInput = useCallback((node: HTMLInputElement | null) => {
-    folderInputRef.current = node;
-    markDirectoryInput(node);
-  }, []);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const close = (event: PointerEvent) => {
-      const shell = pickerShellRef.current;
-      if (shell && event.target instanceof Node && shell.contains(event.target)) return;
-      setPickerOpen(false);
-    };
-    window.addEventListener("pointerdown", close, true);
-    return () => window.removeEventListener("pointerdown", close, true);
-  }, [pickerOpen]);
+  const moveScroll = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -488,14 +487,22 @@ export function SorterApp() {
   const closeCategory = useCallback(() => setOpenCategoryId(null), []);
 
   const onMoveTile = useCallback((itemId: string, fromId: string, toId: string) => {
-    if (fromId === toId) return;
     setState((current) => {
       if (current.phase !== "done") return current;
       const categories = moveLandedTile(current.categories, itemId, fromId, toId);
       if (categories === current.categories) return current;
+      moveScroll.current = toId;
       return { ...current, categories };
     });
   }, []);
+
+  useLayoutEffect(() => {
+    const toId = moveScroll.current;
+    if (!toId) return;
+    moveScroll.current = null;
+    const strip = document.querySelector(`[data-dock="${CSS.escape(toId)}"]`);
+    if (strip instanceof HTMLElement) strip.scrollLeft = 0;
+  });
 
   function clearSavedFlash() {
     if (savedTimer.current !== null) {
@@ -631,22 +638,15 @@ export function SorterApp() {
       kind: sessionKind(file),
     }));
     setOpenCategoryId(null);
-    setState((current) => {
-      const showBoot = !current.mode && current.phase === "empty";
-      return {
-        ...current,
-        phase: "sorting",
-        folderName: mergeFolderName(current.folderName, folderName),
-        incoming: [...current.incoming, ...incomingFiles],
-        total: current.total + partition.supported.length,
-        skipped: current.skipped + partition.skipped,
-        error: null,
-        modelLine: showBoot
-          ? "Loading the vision model. It stays in this browser."
-          : current.modelLine,
-        modelRatio: showBoot ? 0.04 : current.modelRatio,
-      };
-    });
+    setState((current) => ({
+      ...current,
+      phase: "sorting",
+      folderName: mergeFolderName(current.folderName, folderName),
+      incoming: [...current.incoming, ...incomingFiles],
+      total: current.total + partition.supported.length,
+      skipped: current.skipped + partition.skipped,
+      error: null,
+    }));
     void runPipeline();
   }
 
@@ -665,8 +665,6 @@ export function SorterApp() {
               ...current,
               phase: "done",
               flights: [],
-              modelLine: null,
-              modelRatio: null,
               error: "The sort stopped before the flock could land.",
               releasing: false,
             }
@@ -707,8 +705,6 @@ export function SorterApp() {
         phase: "done",
         flights: [],
         releasing: false,
-        modelLine: null,
-        modelRatio: null,
         categories: categories.filter((category) => category.items.length > 0),
         landed: current.landed + added,
       };
@@ -716,26 +712,6 @@ export function SorterApp() {
   }
 
   async function runOneDrain(id: number) {
-
-    onModelProgress((progress) => {
-      if (runId.current !== id) return;
-      if (progress.status === "progress" && progress.total) {
-        const ratio = Math.max(0, Math.min(1, progress.loaded! / progress.total));
-        const file = progress.file?.split("/").pop() ?? "vision model";
-        setState((current) =>
-          current.phase === "sorting" && runId.current === id
-            ? { ...current, modelLine: `Downloading ${file}`, modelRatio: ratio }
-            : current,
-        );
-      } else if (progress.status === "initiate" || progress.status === "download") {
-        setState((current) =>
-          current.phase === "sorting" && !current.modelLine
-            ? { ...current, modelLine: "Downloading the vision model" }
-            : current,
-        );
-      }
-    });
-
     const prepared: QueueItem[] = [];
     const removed = new Set<string>();
     const held: Held[] = [];
@@ -798,24 +774,15 @@ export function SorterApp() {
 
     let mode: ClassifierMode = "clip";
     try {
+      // The weight download stays silent. A failure uses the short fallback sentence, not a filename.
       await loadClipModel();
       if (runId.current !== id) return;
       mode = "clip";
-      setState((current) =>
-        runId.current === id ? { ...current, mode: "clip", modelLine: null, modelRatio: null } : current,
-      );
+      setState((current) => (runId.current === id ? { ...current, mode: "clip" } : current));
     } catch {
       mode = "fallback";
       setState((current) =>
-        runId.current === id
-          ? {
-              ...current,
-              mode: "fallback",
-              modelLine: null,
-              modelRatio: null,
-              notice: fallbackNotice(),
-            }
-          : current,
+        runId.current === id ? { ...current, mode: "fallback", notice: fallbackNotice() } : current,
       );
     }
 
@@ -1103,14 +1070,6 @@ export function SorterApp() {
     }
   }
 
-  async function onDirectory(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (files.length === 0) return;
-    const folder = await filesFromList(files);
-    acceptFiles(folder.folderName, folder.files);
-  }
-
   function onFiles(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
@@ -1192,29 +1151,19 @@ export function SorterApp() {
   const sorting = state.phase === "sorting";
   const lifting = state.flights.length > 0 || state.releasing;
   const readCount = state.labeled + state.unreadable;
-  const intakeOpen =
-    state.modelLine !== null ||
-    state.pile.length > 0 ||
-    (state.total > 0 && readCount < state.total);
+  const intakeOpen = state.pile.length > 0 || (state.total > 0 && readCount < state.total);
   const preparing = sorting && !lifting && intakeOpen;
-  const statusLine = state.modelLine
-    ? state.modelLine
-    : lifting
-      ? state.landed > 0
-        ? `The flock is landing · ${state.landed} settled`
-        : "The flock is landing"
-      : preparing
-        ? state.total > 0
-          ? `Sorting the pile · ${readCount} of ${state.total}`
-          : "Sorting the pile"
-        : null;
+  const statusLine = lifting
+    ? state.landed > 0
+      ? `The flock is landing · ${state.landed} settled`
+      : "The flock is landing"
+    : preparing
+      ? state.total > 0
+        ? `Sorting the pile · ${readCount} of ${state.total}`
+        : "Sorting the pile"
+      : null;
   const pileClear =
-    sorting &&
-    !lifting &&
-    state.pile.length === 0 &&
-    state.total > 0 &&
-    readCount >= state.total &&
-    state.modelLine === null;
+    sorting && !lifting && state.pile.length === 0 && state.total > 0 && readCount >= state.total;
   const showSortFlock = Boolean(statusLine?.startsWith("Sorting the pile"));
   const breathing = showSortFlock;
   const downloadLabel = downloadSaved ? "Saved" : zipping ? "Packing folders…" : "Download folders";
@@ -1318,7 +1267,6 @@ export function SorterApp() {
           <div className={cn("max-w-lg", settled || finishedEmpty ? "mt-6" : "mt-7")}>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <div
-                ref={pickerShellRef}
                 className="picker-shell"
                 data-folder-picker
                 onDragOverCapture={(event) => {
@@ -1338,38 +1286,10 @@ export function SorterApp() {
                     "media-picker h-11 cursor-pointer rounded-2xl px-[23px] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
                     settled && "border-[#c9d4c6] bg-[#f3f5ef] text-[#3c443e]",
                   )}
-                  aria-haspopup="menu"
-                  aria-expanded={pickerOpen}
-                  onClick={() => setPickerOpen((open) => !open)}
+                  onClick={() => filesInputRef.current?.click()}
                 >
                   Choose files or folder
                 </button>
-                {pickerOpen ? (
-                  <div className="picker-menu" role="menu" aria-label="Add photos or videos">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="picker-menu-action"
-                      onClick={() => {
-                        setPickerOpen(false);
-                        filesInputRef.current?.click();
-                      }}
-                    >
-                      Files
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="picker-menu-action"
-                      onClick={() => {
-                        setPickerOpen(false);
-                        folderInputRef.current?.click();
-                      }}
-                    >
-                      Folder
-                    </button>
-                  </div>
-                ) : null}
                 <input
                   ref={filesInputRef}
                   id="photo-file-input"
@@ -1381,18 +1301,6 @@ export function SorterApp() {
                   aria-hidden
                   className="picker-hidden-input"
                   onChange={onFiles}
-                />
-                <input
-                  id="folder-file-input"
-                  ref={setFolderInput}
-                  type="file"
-                  name="folder"
-                  multiple
-                  tabIndex={-1}
-                  aria-hidden
-                  className="picker-hidden-input"
-                  onChange={onDirectory}
-                  {...{ webkitdirectory: "", directory: "" }}
                 />
               </div>
               {settled || finishedEmpty ? (
